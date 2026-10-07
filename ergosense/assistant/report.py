@@ -206,7 +206,8 @@ def build_prompt(facts, chunks):
                                    ("mean_reba", "Mean REBA"), ("high_risk_share_pct", "% time high risk"),
                                    ("main_postures", "Main postures")]),
         "", f"Rotation plans suggested by the RL planner: {facts['suggested_plans']}. Approved:",
-        json.dumps(facts["approved_rotations"], indent=1) if facts["approved_rotations"] else "none",
+        json.dumps(facts["approved_rotations"], indent=1) if facts["approved_rotations"] else
+        "NONE - no rotation plan was approved during this shift. Do not describe or invent any rotation plan.",
         "", "REFERENCE EXCERPTS (cite by id):",
     ]
     for c in chunks:
@@ -220,7 +221,7 @@ def build_prompt(facts, chunks):
         "## Station findings  (one bullet per station)",
         "## Recommended actions  (numbered list, 3-6 items, each ending with an excerpt id in square brackets)",
         "## Rotation decision explained  (why the approved rotation helps, using the projected peak numbers; "
-        "if none was approved, say so and what the supervisor should consider)",
+        "if none was approved, state plainly that no rotation was approved and what the supervisor should consider)",
     ]
     return "\n".join(lines)
 
