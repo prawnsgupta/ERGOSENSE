@@ -1,0 +1,45 @@
+# ERGOSENSE - pinned, tested on Windows 11 + Python 3.10.11 (2026-10-07).
+# Install from the repo root:  pip install -r ergosense/requirements.txt
+#
+# Note (learned in FitCV): mediapipe 0.10.21 is the last version with the legacy
+# mp.solutions.pose API and needs numpy < 2 and protobuf 4.x; it pulls in opencv-contrib-python,
+# so we pin that instead of opencv-python (installing both breaks the cv2 import).
+
+# --- computer vision (edge) ---
+mediapipe==0.10.21
+numpy==1.26.4
+opencv-contrib-python==4.11.0.86
+protobuf==4.25.9
+pandas==2.3.3
+
+# --- networking + backend ---
+paho-mqtt==2.1.0
+fastapi==0.142.2
+starlette==1.7.0
+uvicorn[standard]==0.54.0
+websockets==16.1.1
+pydantic==2.13.5
+httpx==0.28.1
+python-dotenv==1.2.4
+
+# --- database ---
+psycopg[binary]==3.3.6
+psycopg-pool==3.3.3
+
+# --- reinforcement learning ---
+torch==2.14.1
+gymnasium==1.4.0
+stable-baselines3==2.9.0
+sb3-contrib==2.9.0
+matplotlib==3.10.9
+
+# --- generative AI / RAG ---
+sentence-transformers==6.1.0
+transformers==5.19.0
+scikit-learn==1.7.2
+
+# --- tests ---
+pytest==9.1.1
+
+# --- original FitCV apps (app.py / main.py / offline_eval.py) in the same environment ---
+torch-geometric==2.8.0.post1

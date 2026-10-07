@@ -17,6 +17,7 @@ Producer-consumer design (the OS part of the project):
 Usage (from the repo root, venv active):
     python -m ergosense.edge.pipeline --station S4                    # webcam
     python -m ergosense.edge.pipeline --station S4 --demo-speed 60    # 1 s on camera = 1 min of work
+    python -m ergosense.edge.pipeline --station S4 --video lifting.mp4               # recorded video
     python -m ergosense.edge.pipeline --station S4 --replay dataset/BentOverRow   # FitCV recordings
     python -m ergosense.edge.pipeline --simulate --stations S1,S2,S3,S4 --speed 60
 """
@@ -110,6 +111,7 @@ def parse_args():
     parser.add_argument("--worker", default=None,
                         help="worker id; omit to let the backend use the station's current assignment")
     parser.add_argument("--camera", type=int, default=0, help="OpenCV camera index (default 0)")
+    parser.add_argument("--video", metavar="FILE", help="use a recorded video file instead of the webcam")
     parser.add_argument("--replay", metavar="DIR_OR_CSV", help="replay FitCV landmark recordings instead of a camera")
     parser.add_argument("--replay-fps", type=int, default=15)
     parser.add_argument("--replay-loops", type=int, default=1, help="0 = loop forever")
@@ -173,8 +175,9 @@ def main():
                                  args=(paths, args.replay_fps, args.replay_loops, frames_q, display_q, status,
                                        stop_event, not args.no_window))
         else:
+            source = args.video if args.video else args.camera
             capture = mp.Process(target=run_webcam, name="capture",
-                                 args=(args.camera, frames_q, display_q, status, stop_event, not args.no_window))
+                                 args=(source, frames_q, display_q, status, stop_event, not args.no_window))
         processes.append(capture)
         processes.append(mp.Process(target=run_scoring, name="scoring",
                                     args=(frames_q, events_q, display_q, settings, stop_event)))

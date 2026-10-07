@@ -1,7 +1,8 @@
 """Capture process: produces landmark frames for the scoring process.
 
 Two sources:
-  * webcam - OpenCV camera -> MediaPipe Pose (same legacy API and settings as FitCV's main.py)
+  * webcam - OpenCV camera -> MediaPipe Pose (same legacy API and settings as FitCV's main.py);
+             a recorded video file goes through exactly the same code (--video)
   * replay - FitCV's recorded landmark CSVs (dataset/<Exercise>/*.csv), real human poses
              played back at the recording frame rate, so the pipeline can run without a camera
 
@@ -55,24 +56,30 @@ def _connections():
 
 
 def run_webcam(camera_id, frames_q, display_q, status, stop_event, show_window=True):
-    """Process target: webcam -> MediaPipe -> world landmarks into frames_q."""
+    """Process target: webcam (int index) or video file (path) -> MediaPipe -> world landmarks."""
     child_init()
     import mediapipe as mp
 
     pose = mp.solutions.pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+    is_file = isinstance(camera_id, str)
     cap = cv2.VideoCapture(camera_id)
     if not cap.isOpened():
-        log.error("cannot open camera %s (try --camera 1, or close other apps using the webcam)", camera_id)
+        log.error("cannot open %s (try --camera 1, or close other apps using the webcam)", camera_id)
         stop_event.set()
         frames_q.put(None)
         return
-    log.info("camera %s opened", camera_id)
+    frame_period = 1.0 / (cap.get(cv2.CAP_PROP_FPS) or 30) if is_file else 0.0
+    log.info("%s %s opened", "video" if is_file else "camera", camera_id)
 
     fps, last, n = 0.0, time.time(), 0
     info = None
     while not stop_event.is_set():
+        started = time.time()
         ok, frame = cap.read()
         if not ok:
+            if is_file:
+                log.info("end of video")
+                break
             log.warning("camera returned no frame")
             time.sleep(0.05)
             continue
@@ -99,6 +106,8 @@ def run_webcam(camera_id, frames_q, display_q, status, stop_event, show_window=T
         info = latest(display_q) or info
         if show_window:
             _show(frame, image_landmarks, info, status, fps, stop_event)
+        if is_file:                                       # play recordings at their real speed
+            time.sleep(max(0.0, frame_period - (time.time() - started)))
 
     cap.release()
     cv2.destroyAllWindows()

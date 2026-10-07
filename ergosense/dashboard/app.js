@@ -143,7 +143,8 @@ function renderPlan(plan, note) {
     `Projected end-of-shift peak strain: `, el("strong", {}, p.peak_with_plan.toFixed(0)),
     ` with this policy vs `, el("strong", {}, p.peak_no_rotation.toFixed(0)), ` if nobody rotates. `,
     `Chance that someone ends above the limit: ${(100 * p.prob_anyone_over_limit_with_plan).toFixed(0)}% vs `,
-    `${(100 * p.prob_anyone_over_limit_no_rotation).toFixed(0)}% (${p.rollouts} simulated futures).`));
+    `${(100 * p.prob_anyone_over_limit_no_rotation).toFixed(0)}% (${p.rollouts} simulated futures, `,
+    `assuming you ask for a new suggestion every hour as in the schedule below).`));
   if (plan.moves === 0) {
     root.append(el("p", { class: "small" },
       "No change is needed for the next hour: moving people now would cost more than it saves. ",

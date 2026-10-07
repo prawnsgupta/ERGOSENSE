@@ -55,6 +55,10 @@ ABDUCTION_DEG = 30.0
 WRIST_DEVIATION_DEG = 15.0
 FOOT_RAISE_RATIO = 0.12           # ankle height difference / leg length => one-legged stance
 OVERHEAD_RATIO = 0.10             # wrist above shoulder by this fraction of torso length
+# In a side view the left-right body axis points along the camera's depth axis, MediaPipe's
+# weakest estimate. On FitCV's side-view recordings upright poses showed a false 25-40 degree
+# "side bend" in most frames, so sideways bending is ignored when the view is mostly side-on.
+SIDE_VIEW_DEPTH_SHARE = 0.7
 
 RISK_LEVELS = ("negligible", "low", "medium", "high", "very_high")
 
@@ -271,6 +275,8 @@ def compute_angles(points):
     neck_flexion = math.degrees(math.atan2(np.dot(neck, ant_b), np.dot(neck, trunk_u))) - NECK_NEUTRAL_OFFSET_DEG
     neck_side_bend = abs(_asin_deg(np.dot(_unit(neck), lat_b)))
     neck_twist = _angle_between(_project(p[L_EAR] - p[R_EAR], trunk_u), _project(sh_axis, trunk_u))
+    if abs(hip_axis[2]) / (abs(hip_axis[0]) + abs(hip_axis[2]) + 1e-9) > SIDE_VIEW_DEPTH_SHARE:
+        trunk_side_bend = neck_side_bend = 0.0
 
     arms, visibility = {}, {}
     wrist_height = -math.inf
