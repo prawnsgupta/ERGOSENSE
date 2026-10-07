@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from ergosense.edge.overlay import RISK_COLORS, WAITING_COLOR, draw_panel, draw_skeleton
+from ergosense.edge.overlay import compose
 from ergosense.edge.proc import child_init, latest, put_drop_oldest
 from ergosense.edge.reba import image_to_metric
 
@@ -24,21 +24,11 @@ log = logging.getLogger("edge.capture")
 WINDOW = "ERGOSENSE edge - press Q to quit"
 
 
-def _status_lines(status, fps):
-    link = "MQTT connected" if status["connected"].value else "MQTT OFFLINE - buffering"
-    return [
-        f"{link}  |  sent {status['sent'].value}  pending {status['pending'].value}",
-        f"{fps:4.1f} FPS  |  event ~{status['avg_event_bytes'].value:.0f} B vs raw frame "
-        f"{status['raw_frame_bytes'].value / 1024:.0f} KB",
-    ]
-
-
 def _show(image, image_landmarks, info, status, fps, stop_event):
-    color = RISK_COLORS[info["risk_level"]] if info else WAITING_COLOR
-    if image_landmarks is not None:
-        draw_skeleton(image, image_landmarks, _connections(), color)
-    draw_panel(image, info, _status_lines(status, fps))
-    cv2.imshow(WINDOW, image)
+    values = {k: v.value for k, v in status.items() if hasattr(v, "value")}
+    values["fps"] = fps
+    window = compose(image, image_landmarks, info, _connections(), values, status.get("station", "?"))
+    cv2.imshow(WINDOW, window)
     if cv2.waitKey(1) & 0xFF in (ord("q"), ord("Q"), 27):
         stop_event.set()
 

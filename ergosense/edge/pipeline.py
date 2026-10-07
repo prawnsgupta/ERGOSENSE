@@ -143,6 +143,7 @@ def main():
         "connected": mp.Value("b", 0), "pending": mp.Value("i", 0), "sent": mp.Value("i", 0),
         "avg_event_bytes": mp.Value("d", 0.0), "raw_frame_bytes": mp.Value("d", 0.0),
         "jpeg_frame_bytes": mp.Value("d", 0.0),
+        "station": args.station,                       # plain string, shown in the window title panel
     }
     events_q = mp.Queue(maxsize=1000)
     processes = []
