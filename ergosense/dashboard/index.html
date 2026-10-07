@@ -1,1 +1,84 @@
-<!doctype html><title>ERGOSENSE</title><p>dashboard placeholder</p>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ERGOSENSE Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>ERGOSENSE</h1>
+      <p class="subtitle">Worker ergonomic safety monitor · UN SDG 9</p>
+    </div>
+    <div class="topbar-right">
+      <span id="shift-name" class="muted">Loading shift…</span>
+      <span id="shift-progress" class="muted"></span>
+      <span class="pill" id="ws-status"><span class="dot"></span>Live: connecting</span>
+      <span class="pill" id="mqtt-status"><span class="dot"></span>MQTT: ?</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" aria-labelledby="workers-title">
+      <div class="panel-head">
+        <h2 id="workers-title">Workers right now</h2>
+        <span class="muted small">Smoothed REBA score from each station camera (1 = negligible, 15 = very high)</span>
+      </div>
+      <div id="worker-cards" class="cards"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="strain-title">
+      <div class="panel-head">
+        <h2 id="strain-title">Cumulative strain this shift</h2>
+        <span class="muted small" id="strain-legend"></span>
+      </div>
+      <div id="strain-bars" class="bars"></div>
+    </section>
+
+    <div class="two-col">
+      <section class="panel" aria-labelledby="rotation-title">
+        <div class="panel-head">
+          <h2 id="rotation-title">Job rotation (reinforcement learning)</h2>
+          <button id="suggest-btn" class="btn primary">Suggest rotation</button>
+        </div>
+        <p class="muted small" id="rotation-hint">
+          The trained PPO policy proposes who should work where for the next hour. Nothing changes
+          until a supervisor approves the plan.
+        </p>
+        <div id="plan"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="feed-title">
+        <div class="panel-head">
+          <h2 id="feed-title">Live event feed</h2>
+          <span class="muted small" id="feed-count"></span>
+        </div>
+        <div class="feed-wrap">
+          <table class="feed">
+            <thead><tr><th>Time</th><th>Worker</th><th>Station</th><th>REBA</th><th>Posture</th><th>Source</th></tr></thead>
+            <tbody id="feed-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel" aria-labelledby="report-title">
+      <div class="panel-head">
+        <h2 id="report-title">End-of-shift safety report (generative AI + RAG)</h2>
+        <button id="report-btn" class="btn">Generate report</button>
+      </div>
+      <div id="report-meta" class="muted small"></div>
+      <article id="report" class="report"></article>
+    </section>
+  </main>
+
+  <footer class="muted small">
+    REBA from webcam pose is an approximation and rotation results come from simulation; see the README.
+    API docs: <a href="/docs">/docs</a>
+  </footer>
+  <script src="/static/markdown.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

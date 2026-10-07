@@ -5,13 +5,13 @@ low visibility), but the whole skeleton is coloured by the current REBA risk lev
 """
 import cv2
 
-# BGR colours, the same palette the web dashboard uses
+# BGR colours, the same status palette the web dashboard uses (always shown with a text label)
 RISK_COLORS = {
-    "negligible": (68, 158, 46),     # green
-    "low": (0, 184, 201),            # yellow
-    "medium": (0, 140, 240),         # orange
-    "high": (49, 49, 224),           # red
-    "very_high": (181, 54, 156),     # purple
+    "negligible": (12, 163, 12),     # good      #0ca30c
+    "low": (25, 178, 250),           # warning   #fab219
+    "medium": (90, 131, 236),        # serious   #ec835a
+    "high": (59, 59, 208),           # critical  #d03b3b
+    "very_high": (38, 34, 155),      # critical, darker  #9b2226
 }
 WAITING_COLOR = (180, 180, 180)
 

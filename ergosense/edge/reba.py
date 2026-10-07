@@ -311,7 +311,9 @@ def compute_angles(points):
 # Posture labels
 # ---------------------------------------------------------------------------
 
-LABEL_PRIORITY = ("bending", "overhead_reach", "squatting", "twisting")
+# "leaning" (moderate forward flexion) is our addition to the required labels: without it a
+# 20-60 degree lean with a load can score REBA "high" yet be labelled "neutral".
+LABEL_PRIORITY = ("bending", "overhead_reach", "squatting", "twisting", "leaning")
 
 
 def posture_flags(angles):
@@ -325,6 +327,8 @@ def posture_flags(angles):
         flags.append("squatting")
     if angles.trunk_twist > TWIST_DEG:
         flags.append("twisting")
+    if 20 < angles.trunk_flexion <= 60:
+        flags.append("leaning")
     return flags
 
 

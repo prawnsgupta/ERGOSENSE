@@ -192,3 +192,9 @@ def test_image_coordinates_are_rescaled():
     squashed[:, 2] /= 640 / 480
     restored = reba.image_to_metric(squashed, 640, 480)
     assert compute_angles(restored).trunk_flexion == pytest.approx(40, abs=0.5)
+
+
+def test_moderate_forward_lean_is_labelled_leaning():
+    r = assess(make_pose(trunk_flexion=45, shoulder_flexion=(40, 40)))
+    assert r.posture_label == "leaning"
+    assert r.segments["trunk"] == 3
