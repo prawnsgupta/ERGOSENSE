@@ -1,0 +1,25 @@
+{
+  "threshold": 400.0,
+  "stations": {
+    "S1": {
+      "mean": 13.7,
+      "std": 3.2,
+      "source": "default (station simulator)"
+    },
+    "S2": {
+      "mean": 30.3,
+      "std": 5.1,
+      "source": "default (station simulator)"
+    },
+    "S3": {
+      "mean": 49.1,
+      "std": 3.8,
+      "source": "default (station simulator)"
+    },
+    "S4": {
+      "mean": 79.5,
+      "std": 11.9,
+      "source": "calibrated from 527 real replay events, 2026-10-07"
+    }
+  }
+}

@@ -38,6 +38,8 @@ def fresh_db(test_dsn, capsys):
 
 @pytest.fixture
 def conn(fresh_db):
+    """Autocommit connection, like the backend's: `with conn.transaction()` is then a real
+    BEGIN ... COMMIT/ROLLBACK and not a savepoint inside some implicit transaction."""
     from psycopg.rows import dict_row
-    with psycopg.connect(fresh_db, row_factory=dict_row) as c:
+    with psycopg.connect(fresh_db, row_factory=dict_row, autocommit=True) as c:
         yield c

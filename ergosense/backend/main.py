@@ -6,7 +6,10 @@ then open http://localhost:8000
 """
 import asyncio
 import logging
+import threading
 from contextlib import asynccontextmanager
+
+import psycopg
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -14,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ergosense import config
-from ergosense.backend import repository
+from ergosense.backend import repository, rotation
 from ergosense.backend.db import close_pool, get_pool
 from ergosense.backend.ingest import EventIngestor
 from ergosense.backend.live import LiveHub
@@ -143,3 +146,84 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()       # we only push; this just detects disconnects
     except WebSocketDisconnect:
         hub.disconnect(websocket)
+
+
+# --- rotation planning (reinforcement learning) ------------------------------------------
+
+_planner = None
+_planner_lock = threading.Lock()
+
+
+def get_planner():
+    """Load the PPO model once, on first use (importing torch takes a few seconds)."""
+    global _planner
+    with _planner_lock:
+        if _planner is None:
+            from ergosense.rl.planner import RotationPlanner
+            _planner = RotationPlanner()
+    return _planner
+
+
+class ApproveRequest(BaseModel):
+    approved_by: str = Field("supervisor", min_length=1, max_length=80)
+
+
+@app.post("/rotation/suggest", status_code=201)
+def rotation_suggest():
+    """Run the RL policy on the live shift state and store the result as a proposed plan."""
+    with db() as conn:
+        try:
+            plan = rotation.suggest_plan(conn, get_planner())
+        except rotation.PlanConflict as exc:
+            raise HTTPException(409, str(exc))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+    hub.publish_threadsafe({"type": "plan", "plan": plan})
+    return plan
+
+
+@app.post("/rotation/{plan_id}/approve")
+def rotation_approve(plan_id: int, body: ApproveRequest | None = None):
+    """Approve a plan in one database transaction (see rotation.approve_plan)."""
+    approved_by = body.approved_by if body else "supervisor"
+    with db() as conn:
+        try:
+            result = rotation.approve_plan(conn, plan_id, approved_by)
+        except rotation.PlanNotFound as exc:
+            raise HTTPException(404, str(exc))
+        except rotation.PlanConflict as exc:
+            raise HTTPException(409, str(exc))
+        except psycopg.errors.IntegrityError as exc:
+            raise HTTPException(409, f"plan violates a database constraint: {exc.diag.message_primary}")
+    hub.publish_threadsafe({"type": "approval", **result})
+    return result
+
+
+@app.get("/rotation/plans")
+def rotation_plans(shift_id: int | None = None):
+    with db() as conn:
+        sid = shift_id or _active_shift_or_404(conn)["shift_id"]
+        return rotation.list_plans(conn, sid)
+
+
+# --- safety report (generative AI + RAG) --------------------------------------------------
+
+@app.post("/report/{shift_id}")
+def create_report(shift_id: int):
+    """Generate the end-of-shift safety report (LLM + RAG, with a template fallback)."""
+    from ergosense.assistant.report import generate_report
+    with db() as conn:
+        if repository.get_shift(conn, shift_id) is None:
+            raise HTTPException(404, f"shift {shift_id} not found")
+    report = generate_report(shift_id)
+    hub.publish_threadsafe({"type": "report", "report_id": report["report_id"], "shift_id": shift_id})
+    return report
+
+
+@app.get("/reports/{report_id}")
+def get_report(report_id: int):
+    with db() as conn:
+        row = conn.execute("SELECT * FROM safety_reports WHERE report_id = %s", (report_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, f"report {report_id} not found")
+    return row

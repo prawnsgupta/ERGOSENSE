@@ -1,4 +1,9 @@
-"""PostgreSQL connection pool (psycopg 3). Rows come back as dicts."""
+"""PostgreSQL connection pool (psycopg 3). Rows come back as dicts.
+
+Connections are in autocommit mode: a single statement commits on its own, and every
+multi-statement change is wrapped explicitly in `with conn.transaction():` (BEGIN ... COMMIT,
+or ROLLBACK if an exception escapes), so transaction boundaries are visible in the code.
+"""
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
@@ -15,7 +20,7 @@ def get_pool(dsn=None):
             dsn or config.DATABASE_URL,
             min_size=1,
             max_size=10,
-            kwargs={"row_factory": dict_row},
+            kwargs={"row_factory": dict_row, "autocommit": True},
             open=True,
         )
     return _pool
