@@ -4,3 +4,10 @@ __pycache__/
 *.pyo
 .env
 static/uploads/
+
+# --- ERGOSENSE ---
+.venv/
+.pytest_cache/
+ergosense/edge/outbox/
+ergosense/assistant/reports/*.md
+!ergosense/assistant/reports/.gitkeep

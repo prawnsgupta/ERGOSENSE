@@ -1,0 +1,5 @@
+# Files read inside Linux containers must keep LF line endings on Windows checkouts.
+*.conf text eol=lf
+*.sql  text eol=lf
+*.yml  text eol=lf
+*.sh   text eol=lf

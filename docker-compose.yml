@@ -1,0 +1,42 @@
+# ERGOSENSE infrastructure: PostgreSQL 16 (+pgvector) and the Mosquitto MQTT broker.
+# Start:  docker compose up -d        Status: docker compose ps
+# Ports are bound to 127.0.0.1 so only this laptop can connect (see README for a LAN demo).
+# Postgres is published on 5433 because 5432 is often taken by a locally installed Postgres.
+name: ergosense
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16          # official postgres:16 image with the pgvector extension built in
+    container_name: ergosense-postgres
+    environment:
+      POSTGRES_USER: ergosense
+      POSTGRES_PASSWORD: ergosense
+      POSTGRES_DB: ergosense
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ergosense -d ergosense"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0.20
+    container_name: ergosense-mosquitto
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data      # persistent sessions + queued QoS 1 messages survive restarts
+    healthcheck:
+      # $$ escapes $ for compose; $SYS topics are published by the broker itself
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/broker/version' -C 1 -W 5 -i healthcheck"]
+      interval: 10s
+      timeout: 8s
+      retries: 10
+
+volumes:
+  pgdata:
+  mosquitto_data:
