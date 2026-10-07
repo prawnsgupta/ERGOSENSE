@@ -1,10 +1,10 @@
 # Webcam demo checklist (Windows)
 
-Run everything in the repo folder `D:\Downloads\College\EL\ERGOSENSE`. Use **VS Code terminals** or
+Run everything in the repo folder `D:\Downloads\College\EL\5th Sem EL\ERGOSENSE`. Use **VS Code terminals** or
 **PowerShell windows**. Every terminal needs the virtual environment activated first:
 
 ```
-cd D:\Downloads\College\EL\ERGOSENSE
+cd "D:\Downloads\College\EL\5th Sem EL\ERGOSENSE"   # quotes needed: the path has spaces
 .venv\Scripts\Activate.ps1
 ```
 
@@ -44,3 +44,8 @@ Stop everything with **Q** in the OpenCV window and **Ctrl+C** in each terminal.
   (real recorded poses) or `--video your_clip.mp4`.
 - *Report says "Template fallback"*: Ollama is not running or the model is not pulled (`ollama pull llama3.1:8b`).
 - *Port 8000 in use*: `--port 8001` in step 2 and set `API_PORT=8001` in `.env`.
+- *"Fatal error in launcher: Unable to create process"* (from `pip`, `uvicorn` or `pytest`): the project folder
+  was moved, and those small launchers still point at the old location. `python -m uvicorn …`, `python -m pytest`
+  and `python -m pip …` always work. To fix the launchers, recreate the venv in the new folder (setup steps in the README).
+- After moving the folder, also run `docker compose up -d` once from the new folder, so the broker's config file is
+  mounted from the new path.
