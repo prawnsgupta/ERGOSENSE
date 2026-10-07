@@ -11,9 +11,9 @@ The weights grow faster than the REBA risk bands because injury risk does too.
 With the default safe limit of 400 points per shift, a worker may spend the equivalent of
 about 6.7 h in medium-risk postures or 3.3 h in high-risk postures. The limit is a design
 parameter of this project (STRAIN_THRESHOLD in .env), not a clinical threshold: it was set
-about 17% above the load a perfectly balanced rotation gives on the seeded stations
-(~341 points per 8 h), so balancing work keeps everyone safe but a static assignment at the
-loading bay (~620 points) does not.
+about 15% above the load a perfectly balanced rotation gives on the seeded stations
+(~350 points per 8 h), so balancing work keeps everyone safe but a static assignment at the
+loading bay (~650 points) does not.
 """
 
 RISK_WEIGHT = {

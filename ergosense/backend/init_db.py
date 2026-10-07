@@ -6,6 +6,7 @@ Usage (from the repo root, with the venv active):
     python -m ergosense.backend.init_db --reset      # DROP everything and start from scratch
 """
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 import psycopg
@@ -40,6 +41,11 @@ def init_db(dsn=None, reset=False, new_shift=False):
             conn.execute("DROP SCHEMA public CASCADE")
             conn.execute("CREATE SCHEMA public")
         run_sql_file(conn, HERE / "schema.sql")
+        # name new shifts in the laptop's local time, not the container's UTC clock
+        minutes = int(datetime.now().astimezone().utcoffset().total_seconds() // 60)
+        hours, mins = divmod(abs(minutes), 60)
+        sign = "+" if minutes >= 0 else "-"
+        conn.execute(f"SET TIME ZONE INTERVAL '{sign}{hours:02d}:{mins:02d}' HOUR TO MINUTE")
         if new_shift:
             closed = close_active_shift(conn)
             if closed:

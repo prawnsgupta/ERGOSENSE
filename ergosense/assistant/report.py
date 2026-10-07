@@ -112,7 +112,7 @@ def gather_facts(conn, shift_id):
         proj = p["projection"] or {}
         plans.append({
             "plan_id": p["plan_id"], "policy": p["policy"], "approved_by": p["approved_by"],
-            "approved_at": p["approved_at"].strftime("%H:%M"),
+            "approved_at": p["approved_at"].astimezone().strftime("%H:%M"),
             "assignments": p["assignments"],
             "projected_peak_with_plan": proj.get("peak_with_plan"),
             "projected_peak_no_rotation": proj.get("peak_no_rotation"),

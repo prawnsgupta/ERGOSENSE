@@ -3,7 +3,9 @@
     python -m ergosense.rl.calibrate
 
 Only events from a real pose source count (webcam, or FitCV recordings replayed through the
-edge pipeline), never simulated ones. A station with at least MIN_EVENTS such events gets
+edge pipeline), never simulated ones. The committed profile for S4 (loading bay) came from:
+    python -m ergosense.edge.pipeline --station S4 --replay dataset/BentOverRow --load-kg 8            --replay-fps 90 --interval 0.25 --no-window
+(8 kg = the station's typical box weight, entered as REBA's load score like an assessor would). A station with at least MIN_EVENTS such events gets
 
     mean strain per hour = 60 * time-weighted mean of RISK_WEIGHT[risk_level]
 

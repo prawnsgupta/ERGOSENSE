@@ -1,6 +1,6 @@
 {
   "timesteps": 500000,
-  "train_minutes": 4.29,
+  "train_minutes": 3.54,
   "seed": 0,
   "threshold": 400.0,
   "profiles": {
@@ -20,9 +20,9 @@
       "source": "default (station simulator)"
     },
     "S4": {
-      "mean": 79.5,
-      "std": 11.9,
-      "source": "calibrated from 527 real replay events, 2026-10-07"
+      "mean": 81.8,
+      "std": 12.3,
+      "source": "calibrated from 528 real replay events, 2026-10-08"
     }
   }
 }
