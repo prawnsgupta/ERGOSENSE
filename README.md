@@ -1,134 +1,124 @@
-# ERGOSENSE — industrial worker ergonomic safety system
+# ERGOSENSE
 
-*UN SDG 9 (Industry, Innovation and Infrastructure) · built on top of [FitCV](FITCV_README.md)*
+**Worker-first ergonomic safety for industrial workplaces.**
+Webcams watch the workstations, every worker's posture risk is scored live with REBA, dangerous situations are
+flagged the moment they happen, and job rotation is planned so nobody's cumulative strain crosses a safe limit.
+No video ever leaves the workstation.
 
-A webcam watches a worker at a workstation. The edge device scores posture risk with **REBA** and streams
-small JSON events, never video, over **MQTT**. A **FastAPI** backend stores them in **PostgreSQL** and
-tracks every worker's cumulative strain across the shift. A **reinforcement-learning (PPO)** planner suggests
-job rotations so nobody exceeds a safe strain limit, and a supervisor approves them on a live dashboard. At the
-end of the shift an **LLM with RAG** over ergonomic guidance writes a safety report in which every
-recommendation cites a verified source.
+[![ERGOSENSE tests](https://github.com/prawnsgupta/ERGOSENSE/actions/workflows/ergosense-ci.yml/badge.svg)](https://github.com/prawnsgupta/ERGOSENSE/actions/workflows/ergosense-ci.yml)
+![Python 3.10](https://img.shields.io/badge/python-3.10-blue)
+![UN SDG 9](https://img.shields.io/badge/UN%20SDG-9%20Industry%2C%20Innovation%20%26%20Infrastructure-orange)
 
-![RL policy comparison](ergosense/rl/results/policy_comparison.png)
+![Rotation policy comparison](ergosense/rl/results/policy_comparison.png)
 
 ---
 
-## 1. Problem statement
+## Why
 
-**Context.** Work-related musculoskeletal disorders (low-back, shoulder and wrist injuries) are the most
-common occupational health problem in manufacturing, warehousing and logistics. They are caused by
-cumulative exposure to awkward postures, such as deep bending, overhead reaching, twisting and lifting from the floor,
-repeated over whole shifts. Ergonomists assess this with observational methods like **REBA**, but on paper and
-only a few times a year. Day-to-day exposure stays invisible, and work rotation is planned by habit rather
-than by measured load.
+Work-related musculoskeletal disorders (back, shoulder, neck and wrist injuries) are the most common
+occupational health problem in warehousing, manufacturing and textiles. They are caused by awkward postures
+repeated for hours: bending to floor-level shelves, reaching overhead, twisting with a load, sitting hunched
+over a machine. Today this risk is checked on paper a few times a year. A spot check sees a few minutes of
+work; a supervisor sees output on a screen, not strain building up in a body. Help usually arrives after the
+injury.
 
-**Problem.** How can a factory continuously measure each worker's posture risk with cheap, existing hardware,
-without filming people, and use that measurement to keep every worker's cumulative strain below a safe limit?
+ERGOSENSE measures that exposure continuously with cheap, existing hardware (webcams and a laptop), shows it
+to the supervisor while it is happening, and helps share hard work fairly, without blaming or surveilling
+workers.
 
-**Relevance to SDG 9.** Target 9.4 asks industries to upgrade with clean, efficient technologies, and target 9.5
-asks for more research and innovation in industry. ERGOSENSE is low-cost, retrofittable industrial
-infrastructure (a webcam, a laptop and open-source software) that makes production lines safer and more
-productive. It also supports SDG 8.8 (safe and secure working environments).
+## What it does
 
-## 2. Objectives and outcomes
+| | |
+|---|---|
+| **Scores posture live** | MediaPipe body landmarks → joint angles → REBA score (1–15) and risk level, per worker, about once a second |
+| **Tracks 10–15 workers at once** | One camera covers 3–5 workstations; each workstation is a *zone* on the image, so no face recognition is needed |
+| **Flags danger immediately** | Red/amber alerts per worker: very high-risk posture, lifting while bent, high-risk posture held too long, strain near or over the shift limit |
+| **Tracks cumulative strain** | Every minute of work adds strain according to its risk; a worker's total is compared with a safe shift limit |
+| **Plans job rotation** | Suggests who should work where for the next hour, only into stations each worker is trained for; a supervisor approves every move |
+| **Writes the shift report** | An LLM, grounded in ergonomic guidance by retrieval (RAG), writes an end-of-shift safety report in which every citation is verified |
+| **Keeps working offline** | Events are buffered on disk if the network drops and delivered in order later; nothing is lost or counted twice |
 
-| # | Objective (measurable) | Result |
-|---|---|---|
-| O1 | Score whole-body posture risk with REBA from a single webcam in real time, with segment scores and risk level, validated on constructed and real poses | Done: 21 REBA tests incl. real FitCV recordings (bent-over rows score far above upright curls; squats > 90° knee flexion) |
-| O2 | Deliver posture events edge → database with **no loss** during broker or backend outages, using < 1 KB per event | ~600 B/event (≈1,540× smaller than a raw frame); 0 events lost and 0 out of order in outage tests |
-| O3 | Keep per-worker cumulative strain consistent under duplicates and concurrent approvals | Idempotent ingest + single-transaction approval with row lock; 9 database tests |
-| O4 | Learn a rotation policy that lowers the peak worker strain below the no-rotation, round-robin and greedy baselines on 500 seeded shifts, respecting training constraints | PPO peak 400 vs 691 / 532 / 437 (see §8) |
-| O5 | Produce an end-of-shift report in which **every** cited source is verified against the retrieved guidance | Citation checker removes and flags any unverified id; template fallback if no LLM |
-
-## 3. Architecture
+## How it works
 
 ```mermaid
 flowchart LR
-  subgraph EDGE["Edge device (laptop at the station)"]
-    CAM[Webcam / video file /<br/>FitCV replay] --> CAP[capture process<br/>MediaPipe Pose]
-    CAP -->|frames_q, bounded<br/>drop oldest| SC[scoring process<br/>REBA + median smoothing]
-    SC -->|display_q| CAP
-    SC -->|events_q, bounded<br/>blocking| PUB[publisher process<br/>SQLite outbox]
-    SIM[--simulate:<br/>station simulator] --> PUB
+  subgraph EDGE["Edge laptop (at the workstations)"]
+    CAM[Webcam] --> CAP[capture<br/>multi-person pose]
+    CAP -->|zones: person → station| SC[scoring<br/>REBA + smoothing per zone]
+    SC --> PUB[publisher<br/>disk outbox]
   end
-  PUB -->|MQTT QoS 1<br/>ergosense/events/station<br/>~600 B JSON| MQ[(Mosquitto broker<br/>persistent sessions)]
-  MQ -->|manual ack after commit| ING
-  subgraph BACKEND["Backend (FastAPI)"]
-    ING[MQTT subscriber<br/>idempotent ingest] --> DB[(PostgreSQL 16<br/>+ pgvector)]
+  PUB -->|MQTT QoS 1<br/>~600 B JSON events| MQ[(Mosquitto)]
+  MQ --> ING
+  subgraph SERVER["Server (FastAPI)"]
+    ING[ingest<br/>idempotent] --> DB[(PostgreSQL 16<br/>+ pgvector)]
+    ING --> AL[alert engine]
+    AL --> DB
     API[REST API] <--> DB
-    API --> RL[PPO rotation planner<br/>+ Monte Carlo projection]
-    API --> REP[Report generator<br/>SQL facts + RAG + LLM]
-    REP <--> LLM[Ollama llama3.1:8b /<br/>OpenAI-compatible /<br/>template fallback]
-    ING --> WS[WebSocket hub]
+    API --> RL[rotation planner<br/>masked PPO / assignment optimizer]
+    API --> REP[safety report<br/>RAG + LLM]
+    ING --> WS[WebSocket]
+    AL --> WS
   end
   WS --> UI[Dashboard]
-  UI -->|suggest / approve / report| API
+  UI -->|acknowledge · suggest · approve · report| API
 ```
 
-### Methodology flow (one shift)
+1. **Edge.** Each camera's frames go through a multi-person pose model. Every person standing in a workstation
+   zone is scored with REBA; a 15-frame median removes single-frame errors. Only a small JSON event per worker
+   per second leaves the laptop. Capture, scoring and publishing are separate OS processes joined by bounded
+   queues.
+2. **Transport.** Events travel over MQTT with at-least-once delivery. A local SQLite outbox keeps them while the
+   broker is unreachable; unique event IDs make re-delivery harmless.
+3. **Server.** Each event is stored and added to the worker's shift strain in one database transaction. The
+   alert engine checks every worker's rules on every event and pushes changes to the dashboard instantly.
+4. **Decisions.** The supervisor sees live scores, alerts and strain, asks for a rotation suggestion each hour,
+   and approves it. Approval is a single locked transaction, so a plan can never be applied twice.
+5. **Report.** At the end of the shift the facts from the database and the most relevant guidance are turned
+   into a cited safety report.
 
-```mermaid
-flowchart TD
-  A[Worker at station; camera side-on] --> B[MediaPipe: 33 world landmarks per frame]
-  B --> C[Joint angles in a body frame]
-  C --> D[REBA tables A, B, C + load/coupling/activity]
-  D --> E[Median over 15 frames, posture label]
-  E --> F[Every 1 s: JSON event to outbox, then MQTT QoS 1]
-  F --> G[Backend: insert event + add strain in one transaction]
-  G --> H[Dashboard updates live]
-  H --> I{Hour of work passed?}
-  I -- yes --> J[PPO suggests next hour's assignment + projection]
-  J --> K{Supervisor approves?}
-  K -- yes --> L[Transaction: lock plan, swap assignments, audit row]
-  K -- no --> H
-  L --> H
-  I -- end of shift --> M[Retrieve guidance chunks for the shift's risks]
-  M --> N[LLM writes report, citations verified, saved to DB + Markdown]
-```
+## Danger alerts
 
-## 4. How each technology is used
-
-| Technology | Where | How it is used |
+| Level | Rule | Fires when |
 |---|---|---|
-| **DBMS** (mandatory) | `ergosense/backend/schema.sql`, `repository.py`, `rotation.py` | Normalised schema (junction table for training), temporal assignment history, CHECK/UNIQUE/partial-unique constraints as business rules, composite + partial + HNSW + GIN indexes, idempotent `ON CONFLICT` ingest, **single-transaction plan approval with `SELECT … FOR UPDATE`**, JSONB, pgvector |
-| **Reinforcement learning** (mandatory) | `ergosense/rl/` | Gymnasium environment (8 hourly decisions, 4 workers × 4 stations, `Discrete(24)` permutations with training masks), telescoping reward, MaskablePPO training, 3 baselines, 500-shift seeded evaluation, live planner with Monte Carlo projection; one station calibrated from real REBA data in the database |
-| **System design** (mandatory) | whole repo | Edge computing, broker-decoupled pipeline, station-based attribution, human-in-the-loop approval, graceful degradation at every layer (outbox, persistent session, greedy/keyword/template fallbacks) |
-| **Computer networks** (mandatory) | `ergosense/edge/publisher.py`, `outbox.py`, `backend/ingest.py`, `live.py` | MQTT pub/sub with QoS 1, sliding window of in-flight messages, store-and-forward outbox, persistent sessions, ack-after-commit, idempotency keys, WebSockets for server push; bandwidth measured |
-| **Generative AI** (mandatory) | `ergosense/assistant/` | Local LLM (Ollama) or any OpenAI-compatible API writes a structured report from SQL facts; low temperature, grounded prompt, citation verification, clearly labelled template fallback |
-| Computer vision | `ergosense/edge/capture.py`, `reba.py` | MediaPipe Pose world landmarks → body-frame joint angles → REBA |
-| RAG | `ergosense/assistant/ingest.py`, `retriever.py` | Section-level chunks of 3 reference documents, MiniLM embeddings in pgvector, topic-driven retrieval, keyword (full-text) fallback |
-| OS concepts | `ergosense/edge/pipeline.py`, `proc.py` | Three processes, bounded producer–consumer queues with different back-pressure policies, poison-pill shutdown, shared memory values |
+| 🔴 Red | Very high-risk posture | REBA 11–15 held for 5 s |
+| 🔴 Red | Lifting while bent | Bent or twisted (REBA ≥ 8) while handling a load for 3 s |
+| 🔴 Red | Strain over limit | Cumulative shift strain reaches the limit (400) |
+| 🟠 Amber | High-risk posture held | REBA 8–15 held for 30 s |
+| 🟠 Amber | Strain near limit | Shift strain reaches 80% of the limit |
 
-### Reused from FitCV
-FitCV's `features.calculate_angle` (elbow, wrist and knee angles), its MediaPipe Pose setup and pinned working
-version set (mediapipe 0.10.21 + numpy 1.26.4), its skeleton-drawing approach, and its **recorded pose dataset**:
-replayed through the pipeline as real human poses for testing (`--replay`), REBA validation and RL calibration.
-FitCV's own apps (`app.py`, `main.py`, `offline_eval.py`) are untouched and still run in the same environment.
+A rule must hold continuously before it fires, there is at most one open alert per worker and rule, and posture
+alerts clear themselves after 10 s of safe work. All hold times are settings in `.env`.
 
-## 5. Repository layout
+## Results
 
-```
-docker-compose.yml           Postgres 16 + pgvector, Mosquitto 2.0 (ports bound to 127.0.0.1)
-infra/mosquitto/             broker config (listener, persistence)
-.env.example                 all settings (DB URL, MQTT, strain limit, LLM, RAG)
-ergosense/
-  config.py  events.py  strain.py   settings, event contract, strain rule
-  edge/      reba.py capture.py scoring.py publisher.py outbox.py simulate.py pipeline.py overlay.py
-  backend/   schema.sql seed.sql init_db.py main.py ingest.py repository.py rotation.py live.py db.py
-  rl/        env.py policies.py train.py evaluate.py calibrate.py planner.py stations.py models/ results/
-  assistant/ docs/ ingest.py retriever.py embeddings.py llm.py report.py reports/
-  dashboard/ index.html app.js styles.css markdown.js
-  tests/     54 tests
-  e2e_check.py                  end-to-end check of the whole system
-docs/        VIVA_NOTES.md  RUBRIC_MAP.md
-(FitCV)      app.py main.py model.py train.py dataset/ weights/ ...  -> FITCV_README.md
-```
+**Rotation policies** – 500 simulated 8-hour shifts, 4 workers × 4 stations, identical seeds for every policy
+(`python -m ergosense.rl.evaluate`):
 
-## 6. Setup
+| Policy | Final peak strain | Shifts with anyone over the limit | Workers moved per shift |
+|---|---|---|---|
+| No rotation | 691 ± 75 | 100% | 0 |
+| Round-robin | 532 ± 62 | 100% | 26.5 |
+| Greedy | 437 ± 35 | 86% | 11.9 |
+| **Masked PPO** | **400 ± 25** | **48%** | **10.1** |
 
-Needs **Docker Desktop** and **Python 3.10**. All commands run from the repo root.
+**12-worker site** (simulated cameras, real backend): 900 events stored with none lost, 137 alert episodes
+raised and cleared, and a rotation that moved the most-strained workers to trained, lighter stations – projected
+peak strain 410 vs 654 without rotation.
 
-**Windows (PowerShell or the VS Code terminal):**
+**Networking:** about 600 bytes per event against 921,600 bytes for one raw 640×480 frame (over 1,500× less).
+With the broker stopped, every buffered event was delivered in order after it restarted.
+
+**Tests:** 62 automated tests (REBA scoring incl. real recorded poses, outbox, database transactions, RL
+environment, alerts, zones, large-site planner), run on every push.
+
+> These results come from simulation and recorded poses. REBA from a webcam is an approximation and has not yet
+> been validated against a trained ergonomics assessor; see [Limitations](#limitations).
+
+## Quick start
+
+Needs **Docker Desktop** and **Python 3.10**. Run everything from the repository root.
+
+**Windows (PowerShell / VS Code terminal)**
 ```bash
 py -3.10 -m venv .venv
 .venv\Scripts\Activate.ps1
@@ -138,135 +128,131 @@ docker compose up -d
 python -m ergosense.backend.init_db
 python -m ergosense.assistant.ingest
 ```
-If PowerShell blocks `Activate.ps1`, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
+**Mac / Linux:** the same with `python3.10 -m venv .venv`, `source .venv/bin/activate` and `cp .env.example .env`.
 
-**Mac/Linux:** the same, except `python3.10 -m venv .venv`, `source .venv/bin/activate` and `cp .env.example .env`.
+Then, in separate terminals:
+```bash
+python -m uvicorn ergosense.backend.main:app --port 8000
+```
+```bash
+python -m ergosense.edge.pipeline --simulate --speed 60
+```
+Open **http://127.0.0.1:8000**. The simulated stations run an 8-hour shift in 8 minutes.
 
-`docker compose ps` should show both containers as `healthy`. The trained PPO model and station profiles are
-committed, so training is optional (`python -m ergosense.rl.train`, about 4 minutes on a CPU).
+**Optional – a real LLM for the report:** install [Ollama](https://ollama.com/download) and run
+`ollama pull llama3.1:8b`. Any OpenAI-compatible API also works (set `OPENAI_API_KEY`, `OPENAI_BASE_URL`,
+`OPENAI_MODEL` in `.env`). Without one, a clearly labelled template report is produced.
 
-**Optional, a real LLM for the report:** install Ollama (https://ollama.com/download), then run
-`ollama pull llama3.1:8b`. With `LLM_PROVIDER=auto` in `.env`, it is used automatically. Any
-OpenAI-compatible API also works: set `OPENAI_API_KEY`, `OPENAI_BASE_URL` and `OPENAI_MODEL`.
+## Using it with real workers
 
-## 7. Running
+1. **Describe your site** – copy [`sites/example_12_workers.json`](sites/example_12_workers.json) and fill in your
+   stations, pseudonymous worker codes, who is trained for which station and who starts where:
+   ```bash
+   python -m ergosense.backend.init_db --new-shift --site sites/your_site.json
+   ```
+2. **Draw the zones for each camera** – SPACE freezes the picture, drag a box around each workstation, type the
+   station id and the load handled there, S saves:
+   ```bash
+   python -m ergosense.edge.zone_setup --camera 0 --out zones/cam1.json
+   ```
+3. **Start one pipeline per camera** (real time):
+   ```bash
+   python -m ergosense.edge.pipeline --zones zones/cam1.json
+   ```
+   The multi-person pose model (~9 MB) is downloaded once on the first run.
+4. Watch the dashboard: alerts, strain, rotation suggestions and the end-of-shift report.
 
-Open three terminals in the repo root, each with the venv activated.
+Camera placement: side-on or about 45° to the workers, 2–3 m away, head to feet in view, zones not overlapping.
+Other sources: `--station S4` (one worker per camera), `--video clip.mp4`, `--replay <recordings>`,
+`--simulate --site sites/your_site.json`. See `python -m ergosense.edge.pipeline --help` and
+[docs/DEMO_CHECKLIST.md](docs/DEMO_CHECKLIST.md).
 
-| Terminal | Command | What it does |
-|---|---|---|
-| 1 | `python -m uvicorn ergosense.backend.main:app --port 8000` | backend, MQTT subscriber, dashboard at http://127.0.0.1:8000 (API docs at `/docs`) |
-| 2 | `python -m ergosense.edge.pipeline --simulate --stations S1,S2,S3 --speed 60` | simulated cameras at three stations (1 real second = 1 minute of work) |
-| 3 | `python -m ergosense.edge.pipeline --station S4 --demo-speed 60 --load-kg 8` | **webcam** at the loading bay, with the OpenCV window (press Q to quit) |
+## Privacy and worker protection
 
-Other edge sources: `--video clip.mp4` (a recorded video through the same code path), `--replay dataset/BentOverRow`
-(FitCV recordings), `--simulate` (all four stations). Useful options: `--camera 1`, `--worker W04`, `--coupling 2`,
-`--no-window`. Run `python -m ergosense.edge.pipeline --help` for all of them.
+- Video is processed on the edge laptop and never stored or transmitted; only scores leave the device.
+- Workers are identified by station zone and pseudonymous codes, not faces or names.
+- The system only proposes; a supervisor approves every rotation, and rotations are restricted to stations a
+  worker is trained for.
+- ERGOSENSE is meant to improve working conditions and work allocation – not to rank workers or measure who can
+  tolerate the most pain. Sites that deploy it should agree this in writing with workers and the safety committee.
 
-Other commands: `python -m pytest` (all tests) · `python -m ergosense.e2e_check` (whole system, about 1 minute) ·
-`python -m ergosense.rl.evaluate` · `python -m ergosense.assistant.report` ·
-`python -m ergosense.backend.init_db --new-shift` (fresh shift) · `--reset` (wipe everything).
+## Technology
 
-### Demo script (about 8 minutes)
-1. `docker compose ps` (both containers healthy) → start the backend (terminal 1) → open the dashboard.
-2. `python -m ergosense.backend.init_db --new-shift` for a clean shift, then refresh the dashboard.
-3. Start the simulated stations (terminal 2). Cards, strain bars and the event feed update live.
-4. Start the webcam at S4 (terminal 3). Stand side-on, then stand upright, bend down to "lift" a box, reach
-   overhead, and squat. The OpenCV skeleton changes colour with the REBA risk, and Karan's (W04) card follows.
-5. Point out the bandwidth line in the OpenCV window: about 600 B per event vs about 900 KB per frame, and no video leaves the laptop.
-6. **Network resilience:** run `docker compose stop mosquitto`. The edge says OFFLINE and keeps buffering. Then run
-   `docker compose start mosquitto`, and every buffered event arrives (the event feed catches up, nothing is lost).
-7. After about an hour of simulated work, click **Suggest rotation**. Explain the table: who moves where, and the
-   projected end-of-shift strain with and without rotation. Click **Approve**. Try approving again from `/docs`
-   to show the 409 (the transaction plus row lock).
-8. Repeat the suggestion every simulated hour. Once the shift is over, click **Generate report** and show the
-   verified citations and the Sources section.
-9. Show `ergosense/rl/results/policy_comparison.png` and run `python -m pytest` (54 tests).
+| Area | Tools and techniques |
+|---|---|
+| Computer vision | MediaPipe Pose / PoseLandmarker (33 3-D landmarks, several people per frame), OpenCV, REBA |
+| Edge and OS | Python multiprocessing, bounded producer–consumer queues, SQLite outbox |
+| Networking | MQTT (Eclipse Mosquitto, QoS 1, persistent sessions), WebSockets |
+| Database | PostgreSQL 16 (transactions, row locks, partial indexes, JSONB), pgvector |
+| Reinforcement learning | Gymnasium, Stable-Baselines3 MaskablePPO with invalid-action masking; Hungarian assignment (SciPy) for larger sites |
+| Generative AI | Retrieval-augmented generation (sentence-transformers + pgvector), Ollama or OpenAI-compatible LLMs, citation verification |
+| Backend and UI | FastAPI, Uvicorn, vanilla JS dashboard |
+| Infrastructure and testing | Docker Compose, pytest, GitHub Actions |
 
-## 8. Evaluation results
+## Repository layout
 
-**REBA validation.** Hand-built skeletons score as the REBA tables predict: neutral standing 1, deep bend with
-neck extension 5 (medium) and 8 (high) with 15 kg, overhead reach 3, or 4 with raised shoulders. On FitCV's real
-recordings, bent-over rows average far higher than upright curls and squats reach > 90° of knee flexion.
+```
+ergosense/
+  edge/        pose capture, multi-person zones, REBA scoring, MQTT publisher, outbox, simulator, zone setup tool
+  backend/     FastAPI app, MQTT ingest, alert engine, database schema and queries, rotation approval
+  rl/          shift environment, PPO training and evaluation, baselines, assignment optimizer, trained model
+  assistant/   guidance documents, retrieval, LLM providers, report generator
+  dashboard/   web dashboard
+  tests/       62 tests
+sites/         site description files (workers, stations, training)
+docs/          demo checklist, project guide, viva notes
+infra/         Mosquitto configuration
+docker-compose.yml, .env.example
+features.py, dataset/, weights/ ...   pose-feature utilities and the recorded pose dataset used for replay,
+                                      REBA validation and station calibration
+```
 
-**Networking.** The average event is ~600 B, against 921,600 B for a raw 640×480 frame (≈1,540× smaller), which is
-~600 B/s per camera vs ~13.8 MB/s of raw 15-FPS video. With the broker stopped for ~13 s, 96 events were buffered on disk
-and all 192 were delivered in order. With the backend stopped, the broker queued 48 events and delivered them
-on restart.
+## API
 
-**Rotation policies (500 seeded 8-hour shifts, same seeds for every policy).** Generated by
-`python -m ergosense.rl.evaluate` (`ergosense/rl/results/summary.csv`):
+`GET /health` · `GET /workers` · `GET /stations` · `GET /state` · `GET /events?worker_id=&limit=` ·
+`GET /shifts/{id}/strain` · `GET /alerts` · `POST /alerts/{id}/ack` · `POST /rotation/suggest` ·
+`POST /rotation/{plan_id}/approve` · `GET /rotation/plans` · `POST /report/{shift_id}` · `WS /ws`.
+Interactive documentation at http://127.0.0.1:8000/docs.
 
-| Policy | Final peak strain | Workers over limit (of 4) | Shifts with anyone over limit | Total strain | Workers moved |
-|---|---|---|---|---|---|
-| No rotation | 691 ± 75 | 1.67 ± 0.47 | 100% | 1513 ± 93 | 0.0 |
-| Round-robin | 532 ± 62 | 1.53 ± 0.61 | 100% | 1511 ± 86 | 26.5 |
-| Greedy | 437 ± 35 | 1.65 ± 0.98 | 86% | 1506 ± 84 | 11.9 |
-| **PPO (ours)** | 400 ± 25 | 0.78 ± 0.99 | 48% | 1502 ± 82 | 10.1 |
+## Limitations
 
-PPO lowers the average final peak by 42% vs no rotation and 8% vs greedy, has 53% fewer workers over the limit than greedy, and moves people 16% less often. It still cannot prevent every exceedance: shifts start with random strain and hidden worker sensitivity, and the safe limit is only ~15% above the perfectly balanced load.
+- **Webcam REBA is an approximation.** Depth is the least reliable axis, wrist detail is coarse, and load, grip
+  and shoulder elevation cannot be seen, so they are set per station.
+- **Seated, wrist-heavy work** (sewing, fine assembly) is not assessed well by REBA; RULA and hand tracking are planned.
+- **Crowded zones:** when workers overlap or block each other, scores become less reliable.
+- **Rotation results come from simulation.** Live station strain rates are measured from real events, but
+  individual worker sensitivity is unknown.
+- The strain weights and the 400-point limit are design parameters, not clinical thresholds.
+- Authentication and TLS are not configured; services are bound to localhost by default.
 
-**Station calibration from real data.** The loading bay (S4) was replayed from 528 real FitCV pose events
-through the full pipeline with an 8 kg load: **81.8 strain/h**, within 6% of the 77.4 strain/h in our
-hand-built station simulator. The other stations use simulator defaults (see `ergosense/rl/station_profiles.json`).
+## Roadmap
 
-**Live end-to-end run** (`python -m ergosense.e2e_check`, one PPO suggestion per hour, approved when anyone
-moves): 4 rotations approved over the shift (hours with nothing to gain were skipped); actual end-of-shift peak **362**, against 370 projected by the planner at hour 2 with hourly planning and **632** projected with no rotation. Nobody ended above the 400 limit. 10/10 checks passed.
+- [x] Live REBA scoring, strain tracking, offline-safe event pipeline
+- [x] Several workers per camera with station zones
+- [x] Live danger alerts and dashboard
+- [x] Rotation planning for 4–15 workers with supervisor approval
+- [x] Cited end-of-shift safety report
+- [ ] Workstation sensor pod (ESP32: temperature, humidity, light) with an LED alert tower
+- [ ] RULA and hand tracking for seated work
+- [ ] Validation against a trained ergonomics assessor and a consent-based field pilot
 
-**Report.** Every report lists its sources. In tests, a fake LLM answer citing a non-existent chunk had that
-citation removed and flagged, and recommendations left without a verified source are marked.
+## References
 
-### Discussion
-- PPO lowers the **peak** worker strain and the number of workers over the limit, with fewer moves than
-  greedy or round-robin. It learns to delay rotations when they are not yet needed, because every move has a cost.
-- **Total strain is the same for every policy.** Rotation shares exposure but cannot remove it. The report
-  therefore always recommends engineering fixes (raising pallets, lowering overhead work) for the station
-  that dominates exposure.
-- Round-robin performs badly once training constraints exist, because a fixed cycle cannot respect who can do which job.
-- The planner's projection assumes the supervisor asks for a suggestion every hour. A single rotation
-  early in the shift is not enough (we observed this in testing).
+- Hignett, S., & McAtamney, L. (2000). Rapid Entire Body Assessment (REBA). *Applied Ergonomics*, 31(2), 201–205.
+- McAtamney, L., & Corlett, E. N. (1993). RULA: A survey method for the investigation of work-related upper limb disorders. *Applied Ergonomics*, 24(2), 91–99.
+- Waters, T. R., Putz-Anderson, V., Garg, A., & Fine, L. J. (1993). Revised NIOSH equation for the design and evaluation of manual lifting tasks. *Ergonomics*, 36(7), 749–776.
+- Schulman, J., et al. (2017). Proximal policy optimization algorithms. arXiv:1707.06347.
+- Huang, S., & Ontañón, S. (2022). A closer look at invalid action masking in policy gradient algorithms. *FLAIRS-35*.
+- Kuhn, H. W. (1955). The Hungarian method for the assignment problem. *Naval Research Logistics Quarterly*, 2(1–2), 83–97.
+- Lewis, P., et al. (2020). Retrieval-augmented generation for knowledge-intensive NLP tasks. *NeurIPS 33*.
 
-## 9. Design decisions (and where we deviated from the brief)
-- **Port 5433** for Postgres (5432 is often taken by a local install), and **`127.0.0.1`, not `localhost`**,
-  everywhere: on Windows `localhost` tries IPv6 first and each connection stalled about 10 s.
-- **pgvector** (in the `pgvector/pgvector:pg16` image) instead of FAISS, so vectors live in the same transactional database.
-- `trained_stations` is a **junction table** (`worker_training`), shown as an array by the `workers_v` view (1NF + foreign keys).
-- Extra columns beyond the brief: `posture_events.shift_id/duration_s/angles/source/edge_seq`;
-  `shift_strain.exposure_s/risky_s`; `rotation_plans.projection`; a `shift_assignments` history table and a `safety_reports` table.
-- Events from fixed station cameras may carry `worker_id = null`. The backend attributes them to whoever was
-  assigned to the station at the event's timestamp.
-- **Strain rule:** `strain += weight(risk) × minutes`, with weights 0 / 0.5 / 1 / 2 / 4. The safe limit is **400** (see `ergosense/strain.py`).
-- Added a **"leaning"** label (trunk flexion 20–60°). Otherwise a loaded forward lean could score "high" but be labelled "neutral".
-- REBA tuning from real data: a **15° neck neutral offset**, and **side-bend ignored in side-on views**, where it is
-  measured along the unreliable depth axis.
-- The RL environment adds hidden per-worker sensitivity (0.85–1.20), random starting strain and training
-  constraints, so that policies must adapt instead of following a fixed timetable.
-- The simulator publishes **accelerated time** (`--speed`). The webcam has `--demo-speed` so a short demo produces visible strain.
-- Shift reports are written in local time; the database stores UTC.
+## Team
 
-## 10. Limitations
-- **REBA from a single webcam is an approximation.** Depth is the least reliable axis (place the camera side-on or at
-  45°), wrist detail is coarse, and load, grip quality and shoulder elevation cannot be seen, so they are command-line inputs.
-- **RL results come from simulation.** Station dynamics are modelled; one station is calibrated on real poses (exercise
-  recordings standing in for lifting), and individual worker sensitivity is unknown in live use.
-- **Task/posture labels are rule-based** thresholds on angles, not a trained classifier. One person per camera.
-- The strain weights and the 400-point limit are project design parameters, not clinical thresholds.
-- Big Data, cloud deployment and NLP beyond report generation are deliberately out of scope. Authentication and TLS
-  are not configured (everything is bound to localhost).
+Team 55, RV College of Engineering – Experiential Learning, UN SDG 9.
+Priyansh Gupta · Nidikirana N · Soorya Anvekar Natarajan · Joshua — mentored by Dr. Chethana R Murthy.
 
-## 11. API
+## Acknowledgements
 
-`GET /health` · `GET /workers` · `GET /stations` · `GET /shifts/active` · `GET /shifts/{id}/strain` ·
-`GET /events?worker_id=&limit=` · `GET /state` · `POST /rotation/suggest` · `POST /rotation/{plan_id}/approve`
-(`{"approved_by": "..."}`) · `GET /rotation/plans` · `POST /report/{shift_id}` · `GET /reports/{id}` · `WS /ws`.
-Interactive docs: http://127.0.0.1:8000/docs
-
-## 12. Testing
-`python -m pytest`: 54 tests, about 25 s (database tests use a separate `ergosense_test` database and skip if
-Docker is down). `ergosense-ci.yml` runs them on GitHub Actions with a Postgres service. `python -m ergosense.e2e_check`
-exercises the running system end to end.
-
-## Attribution
-FitCV (pose pipeline, dataset, models): see [FITCV_README.md](FITCV_README.md). ERGOSENSE was built on top of it as
-a semester project. REBA: Hignett & McAtamney (2000), *Applied Ergonomics* 31(2). NIOSH lifting equation: Waters et al.
-(1993), *Ergonomics* 36(7). The reference documents in `ergosense/assistant/docs/` are our own summaries.
+The pose-feature utilities and the recorded pose dataset come from the team's earlier exercise-recognition
+work by Soorya Natarajan ([details](FITCV_README.md)). The guidance documents in `ergosense/assistant/docs/` are
+our own summaries of published ergonomic methods.
