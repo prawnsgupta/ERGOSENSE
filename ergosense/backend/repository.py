@@ -1,7 +1,7 @@
 """SQL used by the backend. Each function takes an open psycopg connection (dict rows)."""
 from psycopg.types.json import Jsonb
 
-from ergosense.strain import is_high_risk, strain_increment
+from ergosense.strain import RISK_WEIGHT, is_high_risk, strain_increment
 
 
 def active_shift(conn):
@@ -142,3 +142,18 @@ def event_count(conn, shift_id=None):
     if shift_id is None:
         return conn.execute("SELECT count(*) AS n FROM posture_events").fetchone()["n"]
     return conn.execute("SELECT count(*) AS n FROM posture_events WHERE shift_id = %s", (shift_id,)).fetchone()["n"]
+
+
+def station_strain_rates(conn, min_work_s=900):
+    """Measured strain points per hour of work at each station, from all stored posture events.
+
+    Only stations with at least min_work_s seconds of observed work are returned; the planner
+    falls back to the station's base risk level for the others."""
+    weight = " ".join(f"WHEN '{level}' THEN {w}" for level, w in RISK_WEIGHT.items())
+    rows = conn.execute(
+        f"""SELECT station_id, sum(duration_s) AS work_s,
+                   sum(duration_s / 60.0 * CASE risk_level {weight} END) AS strain
+            FROM posture_events GROUP BY station_id HAVING sum(duration_s) >= %s""",
+        (min_work_s,)).fetchall()
+    return {r["station_id"]: {"mean": round(3600.0 * r["strain"] / r["work_s"], 1),
+                              "work_h": round(r["work_s"] / 3600.0, 2)} for r in rows}

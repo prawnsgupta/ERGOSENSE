@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ergosense import config
-from ergosense.backend import repository, rotation
+from ergosense.backend import alerts, repository, rotation
 from ergosense.backend.db import close_pool, get_pool
 from ergosense.backend.ingest import EventIngestor
 from ergosense.backend.live import LiveHub
@@ -28,8 +28,19 @@ log = logging.getLogger("backend")
 hub = LiveHub()
 
 
+def _on_alert_change(kind, alert):
+    hub.publish_threadsafe({"type": "alert", "change": kind, "alert": alert})
+
+
+alert_engine = alerts.AlertEngine(store=alerts.DbAlertStore(get_pool), on_change=_on_alert_change)
+
+
 def _on_ingested(result):
     hub.publish_threadsafe({"type": "event", **result})
+    try:
+        alert_engine.process(result["event"], result["strain"])
+    except Exception:                       # an alert problem must never stop event ingestion
+        log.exception("alert engine failed for event %s", result["event"].get("event_id"))
 
 
 ingestor = EventIngestor(on_ingested=_on_ingested)
@@ -39,6 +50,10 @@ ingestor = EventIngestor(on_ingested=_on_ingested)
 async def lifespan(app):
     hub.loop = asyncio.get_running_loop()
     get_pool()                     # fail fast if the database is unreachable
+    with get_pool().connection() as conn:
+        shift = repository.active_shift(conn)
+        if shift:
+            alert_engine.restore(alerts.open_alerts(conn, shift["shift_id"]))
     ingestor.start()
     log.info("ERGOSENSE backend ready - dashboard at http://%s:%s", config.API_HOST, config.API_PORT)
     yield
@@ -124,16 +139,44 @@ def dashboard_state():
     with db() as conn:
         shift = _active_shift_or_404(conn)
         sid = shift["shift_id"]
+        assignments = repository.current_assignments(conn, sid)
+        strain = repository.shift_strain(conn, sid)
+        in_shift = set(assignments) | {r["worker_id"] for r in strain}
         return {
             "shift": shift,
             "threshold": config.STRAIN_THRESHOLD,
-            "workers": repository.workers(conn),
+            "workers": [w for w in repository.workers(conn) if w["worker_id"] in in_shift],
             "stations": repository.stations(conn),
-            "assignments": repository.current_assignments(conn, sid),
-            "strain": repository.shift_strain(conn, sid),
+            "assignments": assignments,
+            "strain": strain,
+            "alerts": alerts.list_alerts(conn, sid),
             "latest": repository.latest_event_per_worker(conn, sid),
             "events": repository.recent_events(conn, None, 30),
         }
+
+
+# --- safety alerts ---------------------------------------------------------------------
+
+class AckRequest(BaseModel):
+    acknowledged_by: str = Field("supervisor", min_length=1, max_length=80)
+
+
+@app.get("/alerts")
+def list_alerts(all: bool = False):
+    """Alerts of the active shift: by default those still open or not yet acknowledged."""
+    with db() as conn:
+        sid = _active_shift_or_404(conn)["shift_id"]
+        return alerts.list_alerts(conn, sid, only_attention=not all)
+
+
+@app.post("/alerts/{alert_id}/ack")
+def acknowledge_alert(alert_id: int, body: AckRequest | None = None):
+    with db() as conn:
+        row = alerts.acknowledge(conn, alert_id, body.acknowledged_by if body else "supervisor")
+    if row is None:
+        raise HTTPException(404, f"alert {alert_id} not found")
+    hub.publish_threadsafe({"type": "alert", "change": "acknowledged", "alert": row})
+    return row
 
 
 # --- live updates -------------------------------------------------------------------

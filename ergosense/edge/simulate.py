@@ -46,6 +46,24 @@ STATION_MODELS = {
 }
 
 
+# Site files (sites/*.json) describe each station's work_type; it picks one of the models above.
+WORK_TYPE_MODELS = {"inspection": "S1", "packing": "S2", "overhead": "S3", "lifting": "S4"}
+
+
+def station_models(stations, site=None):
+    """Posture model for each simulated station: the demo stations S1-S4, or by work_type from a site file."""
+    work_types = {s["station_id"]: s.get("work_type") for s in (site or {}).get("stations", [])}
+    models = {}
+    for station in stations:
+        if station in STATION_MODELS:
+            models[station] = STATION_MODELS[station]
+        elif work_types.get(station) in WORK_TYPE_MODELS:
+            models[station] = STATION_MODELS[WORK_TYPE_MODELS[work_types[station]]]
+        else:
+            raise SystemExit(f"no posture model for station {station}: pass --site with a work_type for it")
+    return models
+
+
 def sample_angles(rng, posture):
     """Draw one plausible set of joint angles for a posture."""
     g = {name: rng.normal(mean, sd) for name, (mean, sd) in POSTURE_ANGLES[posture].items()}
@@ -66,9 +84,9 @@ def sample_angles(rng, posture):
     )
 
 
-def simulate_posture(rng, station_id, intensity=1.0):
+def simulate_posture(rng, station_id, intensity=1.0, model=None):
     """One REBA result for a station. intensity > 1 means a busier hour (more risky postures)."""
-    model = STATION_MODELS[station_id]
+    model = model or STATION_MODELS[station_id]
     mix = {p: (w if p == "neutral" else w * intensity) for p, w in model["mix"].items()}
     names = list(mix)
     probs = np.array([mix[n] for n in names]) / sum(mix.values())
@@ -78,9 +96,10 @@ def simulate_posture(rng, station_id, intensity=1.0):
     return reba.score_angles(sample_angles(rng, posture), load_kg=load, shoulder_raised=shoulder_raised)
 
 
-def run_simulator(events_q, stations, speed, rate, hours, seed, stop_event):
+def run_simulator(events_q, stations, speed, rate, hours, seed, stop_event, models=None):
     """Process target: publish `rate` events per second per station until `hours` of work."""
     child_init()
+    models = models or station_models(stations)
     rng = np.random.default_rng(seed)
     duration_s = speed / rate                       # work time covered by one event
     total_work_s = hours * 3600
@@ -97,7 +116,7 @@ def run_simulator(events_q, stations, speed, rate, hours, seed, stop_event):
             log.info("simulated hour %d/%d  intensity %s", hour + 1, math.ceil(hours),
                      {s: round(v, 2) for s, v in intensity.items()})
         for station in stations:
-            result = simulate_posture(rng, station, intensity[station])
+            result = simulate_posture(rng, station, intensity[station], models[station])
             seq += 1
             events_q.put(make_event(station, None, result.to_event_fields(), duration_s, "simulated", seq))
         work_s += duration_s

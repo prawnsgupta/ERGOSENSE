@@ -138,3 +138,61 @@ def run_replay(paths, fps, loops, frames_q, display_q, status, stop_event, show_
         cv2.destroyAllWindows()
     put_drop_oldest(frames_q, None)
     log.info("replay finished")
+
+
+def run_multi_webcam(source, zone_cfg, max_people, frames_q, display_q, status, stop_event, show_window=True):
+    """Process target: one camera, several workers. Each person in a zone -> that station's landmarks."""
+    child_init()
+    from ergosense.edge.multipose import MultiPose
+    from ergosense.edge.overlay import compose_multi
+    from ergosense.edge.zones import assign_people
+
+    zones = zone_cfg["zones"]
+    mirror = zone_cfg.get("mirror", True)
+    pose = MultiPose(max_people)
+    is_file = isinstance(source, str)
+    cap = cv2.VideoCapture(source)
+    if not cap.isOpened():
+        log.error("cannot open %s", source)
+        stop_event.set()
+        frames_q.put(None)
+        return
+    frame_period = 1.0 / (cap.get(cv2.CAP_PROP_FPS) or 30) if is_file else 0.0
+    log.info("%s %s opened, watching %d zones for up to %d people", "video" if is_file else "camera",
+             source, len(zones), max_people)
+    t0, fps, last, n, infos = time.time(), 0.0, time.time(), 0, {}
+    while not stop_event.is_set():
+        started = time.time()
+        ok, frame = cap.read()
+        if not ok:
+            if is_file:
+                break
+            time.sleep(0.05)
+            continue
+        if mirror:
+            frame = cv2.flip(frame, 1)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        now = time.time()
+        people = pose.detect(rgb, (now - t0) * 1000)
+        assignment = assign_people([p[0] for p in people], zones)
+        put_drop_oldest(frames_q, {"t": now, "stations": {sid: people[i][1] for sid, i in assignment.items()}})
+
+        n += 1
+        if n % 30 == 1:
+            status["raw_frame_bytes"].value = frame.nbytes
+        fps = 0.9 * fps + 0.1 / max(now - last, 1e-3)
+        last = now
+        infos = latest(display_q) or infos
+        if show_window:
+            values = {k: v.value for k, v in status.items() if hasattr(v, "value")}
+            values["fps"] = fps
+            cv2.imshow(WINDOW, compose_multi(frame, zones, people, assignment, infos, _connections(), values))
+            if cv2.waitKey(1) & 0xFF in (ord("q"), ord("Q"), 27):
+                stop_event.set()
+        if is_file:
+            time.sleep(max(0.0, frame_period - (time.time() - started)))
+    cap.release()
+    pose.close()
+    cv2.destroyAllWindows()
+    put_drop_oldest(frames_q, None)
+    log.info("capture stopped")

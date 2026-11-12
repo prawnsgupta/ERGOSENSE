@@ -212,3 +212,53 @@ def compose(frame, landmarks, info, connections, status, station):
     cv2.rectangle(view, (0, 0), (view.shape[1] - 1, VIEW_H - 1), color, 4)     # risk-coloured frame border
     top = np.hstack([view, _panel(info, station)])
     return np.vstack([top, _footer(top.shape[1], status)])
+
+
+# --- multi-person view (several workers per camera, one zone per station) ------------------------
+
+LIST_W = 300
+
+
+def compose_multi(frame, zones, people, assignment, infos, connections, status):
+    """Camera view with every zone and skeleton, plus a list of the stations on the right.
+
+    people: [(image_landmarks, world_landmarks)], assignment: {station_id: person index},
+    infos: {station_id: latest smoothed REBA fields}.
+    """
+    h, w = frame.shape[:2]
+    person_station = {i: sid for sid, i in assignment.items()}
+    for z in zones:
+        sid = z["station_id"]
+        info = infos.get(sid) if sid in assignment else None
+        color = RISK_COLORS[info["risk_level"]] if info else WAITING_COLOR
+        x1, y1, x2, y2 = z["rect"]
+        p1, p2 = (int(x1 * w), int(y1 * h)), (int(x2 * w), int(y2 * h))
+        cv2.rectangle(frame, p1, p2, color, 3 if info else 1)
+        label = f"{sid} {info['reba_score']} {info['risk_level'].replace('_', ' ')}" if info else f"{sid} empty"
+        cv2.rectangle(frame, (p1[0], p1[1]), (p1[0] + _text_w(label, 0.55, 2) + 12, p1[1] + 24), color, -1)
+        _text(frame, label, (p1[0] + 6, p1[1] + 17), 0.55, (255, 255, 255), 2)
+    for i, (image_lm, _) in enumerate(people):
+        sid = person_station.get(i)
+        info = infos.get(sid) if sid else None
+        color = RISK_COLORS[info["risk_level"]] if info else WAITING_COLOR      # grey = outside every zone
+        draw_skeleton(frame, image_lm, connections, color, risky_bones(info) if info else ())
+
+    view = cv2.resize(frame, (int(w * VIEW_H / h), VIEW_H))
+    panel = np.full((VIEW_H, LIST_W, 3), BG, np.uint8)
+    _text(panel, "ERGOSENSE", (16, 32), 0.7, INK, 2)
+    _text(panel, f"{len(people)} people, {len(assignment)}/{len(zones)} zones", (16, 56), 0.45, INK_2)
+    row_h = min(44, (VIEW_H - 80) // max(len(zones), 1))
+    for k, z in enumerate(zones):
+        sid = z["station_id"]
+        info = infos.get(sid) if sid in assignment else None
+        y = 76 + k * row_h
+        color = RISK_COLORS[info["risk_level"]] if info else WAITING_COLOR
+        cv2.rectangle(panel, (16, y), (24, y + row_h - 8), color, -1)
+        _text(panel, sid, (34, y + 15), 0.5, INK, 1)
+        if info:
+            _text(panel, f"REBA {info['reba_score']}", (120, y + 15), 0.5, color, 2)
+            _text(panel, info["posture_label"].replace("_", " "), (34, y + 32), 0.42, INK_2)
+        else:
+            _text(panel, "nobody in zone", (120, y + 15), 0.45, MUTED)
+    top = np.hstack([view, panel])
+    return np.vstack([top, _footer(top.shape[1], status)])

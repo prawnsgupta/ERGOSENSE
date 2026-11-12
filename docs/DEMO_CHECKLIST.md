@@ -49,3 +49,24 @@ Stop everything with **Q** in the OpenCV window and **Ctrl+C** in each terminal.
   and `python -m pip …` always work. To fix the launchers, recreate the venv in the new folder (setup steps in the README).
 - After moving the folder, also run `docker compose up -d` once from the new folder, so the broker's config file is
   mounted from the new path.
+
+## 10-15 workers at once (several people per camera, live alerts)
+
+1. **Describe your site.** Copy `sites/example_12_workers.json` and put in your real stations, pseudonymous
+   worker codes (W01, W02 ...), who is trained for which station, and who starts where. Then:
+   `python -m ergosense.backend.init_db --new-shift --site sites/your_site.json`
+2. **Draw the zones for each camera** (one rectangle per workstation, head to feet with room to bend):
+   `python -m ergosense.edge.zone_setup --camera 0 --out zones/cam1.json`
+   SPACE freezes the image, drag a box, type the station id and load in the terminal, S saves.
+3. **Start the backend** as usual (`python -m uvicorn ergosense.backend.main:app --port 8000`).
+4. **Start one pipeline per camera** (real time, no `--demo-speed`):
+   `python -m ergosense.edge.pipeline --zones zones/cam1.json`
+   Add `--camera 1` / a second zones file for a second camera on the same laptop. The first run downloads the
+   multi-person pose model (~9 MB) once, or run `python -m ergosense.edge.multipose --download` beforehand.
+5. **Watch the dashboard.** "Safety alerts" lists every flagged worker; red alerts beep and the worker card pulses.
+   Click **Acknowledge** once someone has looked. Alert hold times are in `.env` (`ALERT_HIGH_HOLD_S=30`, ...).
+
+Without cameras: `python -m ergosense.edge.pipeline --simulate --site sites/your_site.json --speed 60`.
+
+Rotation for more than 4 workers uses the assignment optimizer (Hungarian algorithm, untrained stations blocked,
+station strain rates measured from the live events); the trained PPO agent is used for the 4-worker demo site.

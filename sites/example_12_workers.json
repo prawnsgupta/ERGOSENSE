@@ -1,0 +1,268 @@
+{
+  "_comment": "Example site: 12 workers, 12 stations (warehouse). Copy this file, use your real stations and pseudonymous worker codes. work_type is only used by --simulate: lifting | overhead | packing | inspection.",
+  "stations": [
+    {
+      "station_id": "ST01",
+      "name": "Inbound unloading",
+      "base_risk_level": "high",
+      "description": "Lifting cartons from the truck floor onto a pallet",
+      "work_type": "lifting"
+    },
+    {
+      "station_id": "ST02",
+      "name": "Pallet breakdown",
+      "base_risk_level": "high",
+      "description": "Bending to floor-level pallets to pick cartons",
+      "work_type": "lifting"
+    },
+    {
+      "station_id": "ST03",
+      "name": "Floor-level picking",
+      "base_risk_level": "high",
+      "description": "Picking items from the bottom shelf row",
+      "work_type": "lifting"
+    },
+    {
+      "station_id": "ST04",
+      "name": "Top-shelf put-away",
+      "base_risk_level": "high",
+      "description": "Placing stock on shelves above shoulder height",
+      "work_type": "overhead"
+    },
+    {
+      "station_id": "ST05",
+      "name": "Overhead labelling",
+      "base_risk_level": "medium",
+      "description": "Applying labels to hanging or high racks",
+      "work_type": "overhead"
+    },
+    {
+      "station_id": "ST06",
+      "name": "Sort conveyor A",
+      "base_risk_level": "medium",
+      "description": "Standing at the conveyor, reaching and twisting to sort parcels",
+      "work_type": "packing"
+    },
+    {
+      "station_id": "ST07",
+      "name": "Sort conveyor B",
+      "base_risk_level": "medium",
+      "description": "Standing at the conveyor, reaching and twisting to sort parcels",
+      "work_type": "packing"
+    },
+    {
+      "station_id": "ST08",
+      "name": "Packing bench 1",
+      "base_risk_level": "medium",
+      "description": "Packing orders at a waist-high bench",
+      "work_type": "packing"
+    },
+    {
+      "station_id": "ST09",
+      "name": "Packing bench 2",
+      "base_risk_level": "medium",
+      "description": "Packing orders at a waist-high bench",
+      "work_type": "packing"
+    },
+    {
+      "station_id": "ST10",
+      "name": "Quality check",
+      "base_risk_level": "low",
+      "description": "Visual inspection of packed orders at a waist-high table",
+      "work_type": "inspection"
+    },
+    {
+      "station_id": "ST11",
+      "name": "Scan and dispatch",
+      "base_risk_level": "low",
+      "description": "Scanning parcels and loading a low trolley",
+      "work_type": "inspection"
+    },
+    {
+      "station_id": "ST12",
+      "name": "Returns desk",
+      "base_risk_level": "low",
+      "description": "Checking returned items at a seated desk",
+      "work_type": "inspection"
+    }
+  ],
+  "workers": [
+    {
+      "worker_id": "W01",
+      "display_name": "Anil",
+      "trained_stations": [
+        "ST01",
+        "ST02",
+        "ST03",
+        "ST04",
+        "ST06",
+        "ST07",
+        "ST08",
+        "ST09",
+        "ST10",
+        "ST11",
+        "ST12"
+      ]
+    },
+    {
+      "worker_id": "W02",
+      "display_name": "Bhavna",
+      "trained_stations": [
+        "ST02",
+        "ST04",
+        "ST05",
+        "ST06",
+        "ST08",
+        "ST10",
+        "ST11"
+      ]
+    },
+    {
+      "worker_id": "W03",
+      "display_name": "Chetan",
+      "trained_stations": [
+        "ST03",
+        "ST06",
+        "ST07",
+        "ST08",
+        "ST09",
+        "ST10",
+        "ST11",
+        "ST12"
+      ]
+    },
+    {
+      "worker_id": "W04",
+      "display_name": "Deepa",
+      "trained_stations": [
+        "ST01",
+        "ST02",
+        "ST03",
+        "ST04",
+        "ST06",
+        "ST08",
+        "ST10",
+        "ST11"
+      ]
+    },
+    {
+      "worker_id": "W05",
+      "display_name": "Esha",
+      "trained_stations": [
+        "ST05",
+        "ST06",
+        "ST07",
+        "ST08",
+        "ST09",
+        "ST10",
+        "ST11",
+        "ST12"
+      ]
+    },
+    {
+      "worker_id": "W06",
+      "display_name": "Farhan",
+      "trained_stations": [
+        "ST04",
+        "ST05",
+        "ST06",
+        "ST08",
+        "ST10",
+        "ST11"
+      ]
+    },
+    {
+      "worker_id": "W07",
+      "display_name": "Gowri",
+      "trained_stations": [
+        "ST01",
+        "ST02",
+        "ST03",
+        "ST04",
+        "ST06",
+        "ST07",
+        "ST08",
+        "ST09",
+        "ST10",
+        "ST11",
+        "ST12"
+      ]
+    },
+    {
+      "worker_id": "W08",
+      "display_name": "Harish",
+      "trained_stations": [
+        "ST06",
+        "ST08",
+        "ST10",
+        "ST11"
+      ]
+    },
+    {
+      "worker_id": "W09",
+      "display_name": "Indu",
+      "trained_stations": [
+        "ST06",
+        "ST07",
+        "ST08",
+        "ST09",
+        "ST10",
+        "ST11",
+        "ST12"
+      ]
+    },
+    {
+      "worker_id": "W10",
+      "display_name": "Jaya",
+      "trained_stations": [
+        "ST01",
+        "ST02",
+        "ST03",
+        "ST04",
+        "ST05",
+        "ST06",
+        "ST08",
+        "ST10",
+        "ST11"
+      ]
+    },
+    {
+      "worker_id": "W11",
+      "display_name": "Kiran",
+      "trained_stations": [
+        "ST06",
+        "ST07",
+        "ST08",
+        "ST09",
+        "ST10",
+        "ST11",
+        "ST12"
+      ]
+    },
+    {
+      "worker_id": "W12",
+      "display_name": "Lalit",
+      "trained_stations": [
+        "ST06",
+        "ST08",
+        "ST10",
+        "ST11",
+        "ST12"
+      ]
+    }
+  ],
+  "assignment": {
+    "W01": "ST01",
+    "W02": "ST02",
+    "W03": "ST03",
+    "W04": "ST04",
+    "W05": "ST05",
+    "W06": "ST06",
+    "W07": "ST07",
+    "W08": "ST08",
+    "W09": "ST09",
+    "W10": "ST10",
+    "W11": "ST11",
+    "W12": "ST12"
+  }
+}

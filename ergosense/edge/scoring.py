@@ -55,3 +55,46 @@ def run_scoring(frames_q, events_q, display_q, settings, stop_event):
 
     events_q.put(None)
     log.info("scoring stopped after %d events", seq)
+
+
+def run_multi_scoring(frames_q, events_q, display_q, settings, stop_event):
+    """Process target for --zones: independent smoothing, timers and events for every station zone."""
+    child_init()
+    zones = {z["station_id"]: z for z in settings["zones"]}
+    state = {}                   # station -> {"smoother", "tracker", "last_emit", "last_seen"}
+    interval, seq, infos = settings["interval"], 0, {}
+
+    while True:
+        try:
+            item = frames_q.get(timeout=0.5)
+        except queue.Empty:
+            if stop_event.is_set():
+                break
+            continue
+        if item is None:
+            break
+        now = item["t"]
+        for sid, points in item["stations"].items():
+            st = state.get(sid)
+            if st is None or now - st["last_seen"] > 2.0:      # nobody there for a while: start fresh
+                st = state[sid] = {"smoother": ScoreSmoother(window=settings["smooth_window"]),
+                                   "tracker": StaticPostureTracker(), "last_emit": now, "last_seen": now}
+            st["last_seen"] = now
+            z = zones[sid]
+            result = assess(points, load_kg=z["load_kg"], coupling=z["coupling"],
+                            activity=st["tracker"].activity(now))
+            smoothed = st["smoother"].update(result)
+            st["tracker"].update(smoothed.posture_label, now)
+            infos[sid] = smoothed.to_event_fields()
+            if now - st["last_emit"] >= interval:
+                covered = min(now - st["last_emit"], 2 * interval) * settings["demo_speed"]
+                seq += 1
+                events_q.put(make_event(sid, None, infos[sid], covered, settings["source"], seq), timeout=10)
+                st["last_emit"] = now
+        for sid in list(infos):                                 # forget stations nobody stands at
+            if sid not in item["stations"] and now - state[sid]["last_seen"] > 2.0:
+                infos.pop(sid)
+        put_drop_oldest(display_q, dict(infos))
+
+    events_q.put(None)
+    log.info("multi-person scoring stopped after %d events", seq)

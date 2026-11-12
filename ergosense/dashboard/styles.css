@@ -155,3 +155,20 @@ details { margin-top: 10px; font-size: 12px; }
 .banner { padding: 8px 12px; border-radius: 6px; border: 1px solid var(--risk-low); margin: 8px 0; }
 
 footer { text-align: center; padding: 10px 0 24px; }
+
+/* --- safety alerts --- */
+.alerts { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
+.alert-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px;
+  border-left: 5px solid var(--risk-medium); background: rgba(236, 131, 90, 0.08); }
+.alert-row.red { border-left-color: var(--risk-high); background: rgba(208, 59, 59, 0.10); }
+.alert-row.resolved { opacity: 0.6; }
+.alert-body { flex: 1; }
+.alert-level { font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 4px; color: #fff;
+  background: var(--risk-medium); }
+.alert-level.red { background: var(--risk-high); }
+.card.flag-amber { box-shadow: 0 0 0 3px var(--risk-medium); }
+.card.flag-red { box-shadow: 0 0 0 3px var(--risk-high); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(208, 59, 59, 0.35); } }
+.card-alert { margin: 6px 0; font-size: 12px; font-weight: 600; color: var(--risk-medium); }
+.card-alert.red { color: var(--risk-high); }
+.cards { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }

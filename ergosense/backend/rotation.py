@@ -2,6 +2,7 @@
 from psycopg.types.json import Jsonb
 
 from ergosense.backend import repository
+from ergosense.rl import assign
 
 
 class PlanNotFound(Exception):
@@ -17,6 +18,23 @@ def hours_elapsed(strain_rows):
     return max((r["exposure_s"] for r in strain_rows), default=0.0) / 3600.0
 
 
+def station_rates(conn):
+    """Strain added per hour at each station: measured if possible, else from the base risk level."""
+    measured = repository.station_strain_rates(conn)
+    rates = {}
+    for st in repository.stations(conn):
+        sid = st["station_id"]
+        if sid in measured:
+            m = measured[sid]
+            rates[sid] = {"mean": m["mean"], "std": round(0.15 * m["mean"], 1),
+                          "source": f"measured from {m['work_h']} h of posture events"}
+        else:
+            mean = assign.BASE_RATE[st["base_risk_level"]]
+            rates[sid] = {"mean": mean, "std": round(0.15 * mean, 1),
+                          "source": f"estimate from base risk '{st['base_risk_level']}' (not enough data yet)"}
+    return rates
+
+
 def suggest_plan(conn, planner):
     """Ask the planner for the next assignment and store it as a 'proposed' plan."""
     shift = repository.active_shift(conn)
@@ -28,11 +46,15 @@ def suggest_plan(conn, planner):
     if elapsed >= float(shift["planned_hours"]):
         raise PlanConflict("the shift is already over - nothing left to plan")
 
-    strain = {w["worker_id"]: 0.0 for w in repository.workers(conn)}
-    strain.update({r["worker_id"]: r["cumulative_strain"] for r in strain_rows})
     assignment = repository.current_assignments(conn, sid)
+    strain = {w: 0.0 for w in assignment}                      # only workers who are on a station rotate
+    strain.update({r["worker_id"]: r["cumulative_strain"] for r in strain_rows if r["worker_id"] in assignment})
     trained = [(r["worker_id"], r["station_id"]) for r in repository.training_pairs(conn)]
-    result = planner.suggest(strain, assignment, trained, elapsed)
+    if planner.fits(assignment):
+        result = planner.suggest(strain, assignment, trained, elapsed)     # trained PPO (4 x 4 demo site)
+    else:
+        result = assign.suggest(strain, assignment, trained, elapsed, station_rates(conn),
+                                hours=int(float(shift["planned_hours"])))
 
     with conn.transaction():
         # a newer suggestion replaces any older one that was never approved

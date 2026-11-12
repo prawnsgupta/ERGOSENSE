@@ -32,6 +32,11 @@ class RotationPlanner:
     def policy_name(self):
         return self.policy.name
 
+    @staticmethod
+    def fits(assignment):
+        """True if this is the site the PPO agent was trained for (workers W01-W04 on S1-S4)."""
+        return sorted(assignment) == WORKER_IDS and sorted(assignment.values()) == STATION_IDS
+
     def _env(self, trained):
         return RotationEnv(profiles=self.profiles, trained=trained, randomize=False)
 

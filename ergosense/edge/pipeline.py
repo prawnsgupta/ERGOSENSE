@@ -22,6 +22,7 @@ Usage (from the repo root, venv active):
     python -m ergosense.edge.pipeline --simulate --stations S1,S2,S3,S4 --speed 60
 """
 import argparse
+import json
 import logging
 import multiprocessing as mp
 import queue
@@ -116,7 +117,9 @@ def parse_args():
     parser.add_argument("--replay-fps", type=int, default=15)
     parser.add_argument("--replay-loops", type=int, default=1, help="0 = loop forever")
     parser.add_argument("--simulate", action="store_true", help="publish simulated events, no camera needed")
-    parser.add_argument("--stations", default="S1,S2,S3,S4", help="stations to simulate (with --simulate)")
+    parser.add_argument("--stations", default=None,
+                        help="stations to simulate (default: S1-S4, or every station of --site)")
+    parser.add_argument("--site", metavar="FILE", help="site file (sites/*.json): station work types for --simulate")
     parser.add_argument("--speed", type=float, default=60,
                         help="simulation: seconds of work per real second (60 = 8 h shift in 8 min)")
     parser.add_argument("--rate", type=float, default=1.0, help="simulation: events per second per station")
@@ -129,6 +132,9 @@ def parse_args():
     parser.add_argument("--coupling", type=int, default=0, choices=range(4),
                         help="REBA coupling: 0 good, 1 fair, 2 poor, 3 unacceptable")
     parser.add_argument("--smooth-window", type=int, default=15, help="frames in the median smoothing window")
+    parser.add_argument("--zones", metavar="FILE",
+                        help="several workers per camera: zones file from `python -m ergosense.edge.zone_setup`")
+    parser.add_argument("--max-people", type=int, default=None, help="with --zones: people to look for (default zones + 2)")
     parser.add_argument("--no-window", action="store_true", help="do not open the OpenCV window")
     return parser.parse_args()
 
@@ -149,12 +155,33 @@ def main():
     processes = []
 
     if args.simulate:
-        from ergosense.edge.simulate import run_simulator
-        stations = [s.strip() for s in args.stations.split(",") if s.strip()]
+        from ergosense.edge.simulate import run_simulator, station_models
+        site = json.loads(Path(args.site).read_text(encoding="utf-8")) if args.site else None
+        if args.stations:
+            stations = [s.strip() for s in args.stations.split(",") if s.strip()]
+        else:
+            stations = [s["station_id"] for s in site["stations"]] if site else ["S1", "S2", "S3", "S4"]
         outbox_path = OUTBOX_DIR / "simulator.db"
         processes.append(mp.Process(target=run_simulator, name="simulator",
                                     args=(events_q, stations, args.speed, args.rate, args.hours, args.seed,
-                                          stop_event)))
+                                          stop_event, station_models(stations, site))))
+    elif args.zones:
+        from ergosense.edge.capture import run_multi_webcam
+        from ergosense.edge.scoring import run_multi_scoring
+        from ergosense.edge.zones import load_zones
+        zone_cfg = load_zones(args.zones)
+        stations = [z["station_id"] for z in zone_cfg["zones"]]
+        status["station"] = ",".join(stations)
+        frames_q, display_q = mp.Queue(maxsize=30), mp.Queue(maxsize=2)
+        outbox_path = OUTBOX_DIR / f"zones_{Path(args.zones).stem}.db"
+        settings = {"zones": zone_cfg["zones"], "source": "webcam", "interval": args.interval,
+                    "demo_speed": args.demo_speed, "smooth_window": args.smooth_window}
+        source = args.video if args.video else zone_cfg.get("camera", args.camera)
+        processes.append(mp.Process(target=run_multi_webcam, name="capture",
+                                    args=(source, zone_cfg, args.max_people or len(stations) + 2, frames_q,
+                                          display_q, status, stop_event, not args.no_window)))
+        processes.append(mp.Process(target=run_multi_scoring, name="scoring",
+                                    args=(frames_q, events_q, display_q, settings, stop_event)))
     else:
         from ergosense.edge.capture import run_replay, run_webcam
         from ergosense.edge.scoring import run_scoring

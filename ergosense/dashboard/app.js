@@ -6,8 +6,9 @@ const MAX_FEED_ROWS = 40;
 
 const state = {
   shift: null, threshold: 400, workers: {}, stations: {}, assignments: {},
-  strain: {}, latest: {}, plan: null, eventsSeen: 0,
+  strain: {}, latest: {}, plan: null, eventsSeen: 0, alerts: {},
 };
+const LEVEL_RANK = { red: 2, amber: 1 };
 
 const $ = (id) => document.getElementById(id);
 
@@ -65,11 +66,14 @@ function renderCards() {
   for (const id of Object.keys(state.workers).sort()) {
     const w = state.workers[id];
     const ev = state.latest[id];
-    const card = el("div", { class: "card" },
+    const active = Object.values(state.alerts).filter((a) => a.worker_id === id && !a.resolved_at);
+    const worst = active.sort((a, b) => LEVEL_RANK[b.level] - LEVEL_RANK[a.level])[0];
+    const card = el("div", { class: worst ? `card flag-${worst.level}` : "card" },
       el("div", { class: "card-top" },
         el("span", { class: "card-name" }, `${w.display_name}`),
         el("span", { class: "muted small" }, id)),
-      el("div", { class: "card-station" }, `at ${stationName(state.assignments[id])}`));
+      el("div", { class: "card-station" }, `at ${stationName(state.assignments[id])}`),
+      worst ? el("div", { class: `card-alert ${worst.level}` }, `⚠ ${worst.message}`) : null);
     if (ev) {
       const s = ev.segment_scores;
       card.append(
@@ -215,7 +219,53 @@ function renderReport(report) {
   article.append(body);
 }
 
+function renderAlerts() {
+  const root = $("alerts");
+  const list = Object.values(state.alerts)
+    .filter((a) => !a.resolved_at || !a.acknowledged_at)
+    .sort((a, b) => (LEVEL_RANK[b.level] - LEVEL_RANK[a.level]) || (new Date(b.opened_at) - new Date(a.opened_at)));
+  const open = list.filter((a) => !a.resolved_at);
+  $("alerts-summary").textContent = list.length
+    ? `${open.filter((a) => a.level === "red").length} red, ${open.filter((a) => a.level === "amber").length} amber active · ${list.length} need attention`
+    : "No alerts - all workers within limits";
+  root.replaceChildren(...list.map((a) => {
+    const btn = a.acknowledged_at ? el("span", { class: "muted small" }, `seen by ${a.acknowledged_by}`)
+      : el("button", { class: "btn" }, "Acknowledge");
+    if (!a.acknowledged_at) btn.addEventListener("click", () => ackAlert(a.alert_id, btn));
+    const name = state.workers[a.worker_id]?.display_name || a.display_name || a.worker_id;
+    return el("div", { class: `alert-row ${a.level}${a.resolved_at ? " resolved" : ""}` },
+      el("span", { class: `alert-level ${a.level}` }, a.level.toUpperCase()),
+      el("div", { class: "alert-body" },
+        el("strong", {}, `${name} (${a.worker_id}) · ${a.station_id || ""}`),
+        el("div", { class: "small" }, a.message),
+        el("div", { class: "muted small" }, `since ${fmtTime(a.opened_at)}`,
+          a.resolved_at ? ` · cleared ${fmtTime(a.resolved_at)}` : " · still happening")),
+      btn);
+  }));
+}
+
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    osc.frequency.value = 880;
+    osc.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.25);
+  } catch (e) { /* audio blocked until the page is clicked once */ }
+}
+
+async function ackAlert(alertId, btn) {
+  btn.disabled = true;
+  try {
+    const row = await api("POST", `/alerts/${alertId}/ack`, { acknowledged_by: "Shift supervisor" });
+    state.alerts[row.alert_id] = { ...state.alerts[row.alert_id], ...row };
+    renderAlerts();
+  } catch (err) { btn.disabled = false; }
+}
+
 function renderAll() {
+  renderAlerts();
   renderHeader();
   renderCards();
   renderStrain();
@@ -232,6 +282,7 @@ async function loadState() {
   state.assignments = s.assignments;
   state.strain = Object.fromEntries(s.strain.map((r) => [r.worker_id, r]));
   state.latest = Object.fromEntries(s.latest.map((e) => [e.worker_id, e]));
+  state.alerts = Object.fromEntries((s.alerts || []).map((a) => [a.alert_id, a]));
   $("feed-body").replaceChildren(...s.events.map(feedRow));
   renderAll();
 }
@@ -314,6 +365,12 @@ function connectWebSocket(delay = 1000) {
       state.strain[ev.worker_id] = { ...state.strain[ev.worker_id], ...data.strain };
       addToFeed(ev);
       renderAll();
+    } else if (data.type === "alert") {
+      const a = data.alert;
+      state.alerts[a.alert_id] = { ...state.alerts[a.alert_id], ...a };
+      if (data.change === "opened" && a.level === "red") beep();
+      renderAlerts();
+      renderCards();
     } else if (data.type === "plan") {
       state.plan = data.plan;
       renderPlan(state.plan);

@@ -1,7 +1,7 @@
 # ERGOSENSE infrastructure: PostgreSQL 16 (+pgvector) and the Mosquitto MQTT broker.
 # Start:  docker compose up -d        Status: docker compose ps
 # Ports are bound to 127.0.0.1 so only this laptop can connect (see README for a LAN demo).
-# Postgres is published on 5433 because 5432 is often taken by a locally installed Postgres.
+# Postgres is published on 5434 because 5432 is often taken by a local Postgres (and 5433 by other Docker projects).
 name: ergosense
 
 services:
@@ -13,7 +13,7 @@ services:
       POSTGRES_PASSWORD: ergosense
       POSTGRES_DB: ergosense
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:5434:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

@@ -177,3 +177,28 @@ CREATE TABLE IF NOT EXISTS safety_reports (
     citations    JSONB NOT NULL,                    -- {"valid": [...], "invalid": [...], "retrieved": [...]}
     file_path    TEXT
 );
+
+-- ---------------------------------------------------------------------------
+-- Live safety alerts (raised by ergosense/backend/alerts.py while events arrive)
+-- ---------------------------------------------------------------------------
+
+-- One row per alert episode: opened when a rule has held long enough, resolved when the
+-- condition has cleared, acknowledged when a supervisor confirms they have seen it.
+CREATE TABLE IF NOT EXISTS alerts (
+    alert_id         BIGSERIAL PRIMARY KEY,
+    shift_id         INT NOT NULL REFERENCES shifts(shift_id),
+    worker_id        TEXT NOT NULL REFERENCES workers(worker_id),
+    station_id       TEXT REFERENCES stations(station_id),
+    rule             TEXT NOT NULL,
+    level            TEXT NOT NULL CHECK (level IN ('amber', 'red')),
+    message          TEXT NOT NULL,
+    reba_score       SMALLINT,
+    opened_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at      TIMESTAMPTZ,
+    acknowledged_at  TIMESTAMPTZ,
+    acknowledged_by  TEXT
+);
+-- At most one unresolved alert per worker and rule (the engine's debounce, enforced by the DB too).
+CREATE UNIQUE INDEX IF NOT EXISTS alerts_one_open
+    ON alerts (shift_id, worker_id, rule) WHERE resolved_at IS NULL;
+CREATE INDEX IF NOT EXISTS alerts_shift_opened ON alerts (shift_id, opened_at DESC);

@@ -11,3 +11,6 @@ static/uploads/
 ergosense/edge/outbox/
 ergosense/assistant/reports/*.md
 !ergosense/assistant/reports/.gitkeep
+
+# multi-person pose model (downloaded on first --zones run)
+ergosense/edge/models/
